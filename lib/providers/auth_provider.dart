@@ -1,0 +1,240 @@
+import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
+import 'dart:io';
+
+class UserProfile {
+  final String id;
+  final String email;
+  String username;
+  String? avatarUrl;
+
+  UserProfile({
+    required this.id,
+    required this.email,
+    required this.username,
+    this.avatarUrl
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'email': email,
+      'username': username,
+      'avatarUrl': avatarUrl,
+    };
+  }
+
+  factory UserProfile.fromJson(Map<String, dynamic> json) {
+    return UserProfile(
+      id: json['id'],
+      email: json['email'],
+      username: json['username'],
+      avatarUrl: json['avatarUrl'],
+    );
+  }
+}
+
+class AuthProvider extends ChangeNotifier {
+  UserProfile? _userProfile;
+  UserProfile? get userProfile => _userProfile;
+
+  AuthProvider() {
+    _init();
+  }
+
+  Future<void> _init() async {
+    await _loadUserProfileFromPrefs();
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user != null) {
+      await _loadUserProfile();
+    }
+    Supabase.instance.client.auth.onAuthStateChange.listen((data) async {
+      final user = data.session?.user;
+      if (user != null) {
+        await _loadUserProfile();
+      } else {
+        _userProfile = null;
+        await _clearUserProfileFromPrefs();
+      }
+      notifyListeners();
+    });
+  }
+
+  Future<void> _loadUserProfileFromPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userProfileJson = prefs.getString('userProfile');
+    if (userProfileJson != null) {
+      _userProfile = UserProfile.fromJson(json.decode(userProfileJson));
+      notifyListeners();
+    }
+  }
+
+  Future<void> _saveUserProfileToPrefs() async {
+    if (_userProfile != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('userProfile', json.encode(_userProfile!.toJson()));
+    }
+  }
+
+  Future<void> _clearUserProfileFromPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('userProfile');
+  }
+
+  Future<void> _loadUserProfile() async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) return;
+
+    try {
+      final response = await Supabase.instance.client
+          .from('profiles')
+          .select()
+          .eq('id', user.id)
+          .single();
+      if (response != null) {
+        _userProfile = UserProfile(
+          id: user.id,
+          email: user.email!,
+          username: response['username'],
+          avatarUrl: response['avatar_url'],
+        );
+        await _saveUserProfileToPrefs();
+        notifyListeners();
+      }
+    } catch (e) {
+      print('Error loading user profile: $e');
+    }
+  }
+
+  Future<void> updateProfile({String? username, String? avatarUrl}) async {
+    if (_userProfile == null) return;
+
+    final updates = {
+      if (username != null) 'username': username,
+      if (avatarUrl != null) 'avatar_url': avatarUrl,
+    };
+
+    try {
+      await Supabase.instance.client
+          .from('profiles')
+          .upsert({'id': _userProfile!.id, ...updates});
+
+      if (username != null) _userProfile!.username = username;
+      _userProfile!.avatarUrl = avatarUrl ?? _userProfile!.avatarUrl;
+      await _saveUserProfileToPrefs();
+      notifyListeners();
+    } catch (e) {
+      print('Error updating profile: $e');
+      rethrow;
+    }
+  }
+
+  Future<String?> uploadProfilePicture(String filePath) async {
+    try {
+      final fileName = '${_userProfile!.id}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final file = File(filePath);
+      final fileBytes = await file.readAsBytes();
+      final fileExt = filePath.split('.').last;
+
+      final response = await Supabase.instance.client.storage
+          .from('profile-pictures')
+          .uploadBinary(fileName, fileBytes, fileOptions: FileOptions(contentType: 'image/$fileExt'));
+
+      if (response != null) {
+        final String publicUrl = Supabase.instance.client.storage
+            .from('profile-pictures')
+            .getPublicUrl(fileName);
+        return publicUrl;
+      }
+    } catch (e) {
+      print('Error uploading profile picture: $e');
+    }
+    return null;
+  }
+
+  Future<void> signIn(String email, String password) async {
+    try {
+      final response = await Supabase.instance.client.auth.signInWithPassword(
+        email: email,
+        password: password,
+      );
+      if (response.user != null) {
+        await _loadUserProfile();
+      }
+    } catch (e) {
+      print('Error signing in: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> signUp(String email, String password, String username) async {
+    try {
+      final response = await Supabase.instance.client.auth.signUp(
+        email: email,
+        password: password,
+      );
+      if (response.user != null) {
+        await Supabase.instance.client.from('profiles').insert({
+          'id': response.user!.id,
+          'username': username,
+          'email': email,
+        });
+        await _loadUserProfile();
+      } else {
+        throw Exception('Failed to create user');
+      }
+    } catch (e) {
+      print('Error signing up: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> signOut() async {
+    try {
+      await Supabase.instance.client.auth.signOut();
+      _userProfile = null;
+      await _clearUserProfileFromPrefs();
+      notifyListeners();
+    } catch (e) {
+      print('Error signing out: $e');
+      rethrow;
+    }
+  }
+
+  Future<bool> isUsernameTaken(String username) async {
+    try {
+      final response = await Supabase.instance.client
+          .from('profiles')
+          .select('username')
+          .eq('username', username)
+          .single();
+      return response != null;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<UserProfile?> getUserProfile(String userId) async {
+    try {
+      final response = await Supabase.instance.client
+          .from('profiles')
+          .select()
+          .eq('id', userId)
+          .single();
+      if (response != null) {
+        return UserProfile(
+          id: userId,
+          email: response['email'] ?? '',
+          username: response['username'] ?? '',
+          avatarUrl: response['avatar_url'],
+        );
+      }
+    } catch (e) {
+      print('Error fetching user profile: $e');
+    }
+    return null;
+  }
+}
+
