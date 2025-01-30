@@ -6,7 +6,7 @@ final Map<String, Color> moodColors = {
   'Sad': Colors.red,
   'Excited': Colors.green,
   'Frustrated': Colors.red,
-  'Neutral': Colors.yellow,
+  'Neutral': Color(0xFFF0C118),  // Changed to #F0C118
   'Angry': Colors.red,
   'Very Happy': Colors.green,
 };
@@ -76,6 +76,9 @@ class Comment {
 class JournalProvider extends ChangeNotifier {
   List<JournalEntry> _globalEntries = [];
   List<JournalEntry> _userEntries = [];
+  bool _isLoading = false;
+
+  bool get isLoading => _isLoading;
 
   List<JournalEntry> get globalEntries => _globalEntries;
   List<JournalEntry> get userEntries => _userEntries;
@@ -133,10 +136,12 @@ class JournalProvider extends ChangeNotifier {
   }
 
   Future<void> addEntry(String title, String content, String mood, bool isPublic) async {
-    final user = Supabase.instance.client.auth.currentUser;
-    if (user == null) return;
-
+    _isLoading = true;
+    notifyListeners();
     try {
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user == null) return;
+
       final response = await Supabase.instance.client.from('journal_entries').insert({
         'title': title,
         'content': content,
@@ -155,10 +160,15 @@ class JournalProvider extends ChangeNotifier {
       }
     } catch (e) {
       print('Error adding entry: $e');
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
   }
 
   Future<void> updateEntry(String id, String title, String content, String mood, bool isPublic) async {
+    _isLoading = true;
+    notifyListeners();
     try {
       await Supabase.instance.client.from('journal_entries').update({
         'title': title,
@@ -203,6 +213,9 @@ class JournalProvider extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       print('Error updating entry: $e');
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
   }
 

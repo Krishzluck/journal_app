@@ -1,10 +1,11 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:journal_app/providers/auth_provider.dart';
 import 'package:journal_app/providers/journal_provider.dart';
 import 'package:journal_app/screens/edit_profile_page.dart';
 import 'package:journal_app/screens/journal_entry_page.dart';
+import 'package:journal_app/widgets/custom_button.dart';
 import 'package:journal_app/widgets/journal_post_card.dart';
+import 'package:journal_app/widgets/user_avatar.dart';
 import 'package:provider/provider.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -32,54 +33,60 @@ class _ProfilePageState extends State<ProfilePage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('My Profile'),
-        actions: [
-          IconButton(
-            icon: Icon(Icons.edit),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => EditProfilePage()),
-            ),
-          ),
-        ],
+        title: Text('Profile'),
       ),
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.all(16.0),
+          SizedBox(height: 20),
+          Center(
             child: Column(
               children: [
-                CircleAvatar(
+                UserAvatar(
+                  imageUrl: authProvider.userProfile?.avatarUrl,
                   radius: 50,
-                  backgroundImage: authProvider.userProfile?.avatarUrl != null
-                      ? CachedNetworkImageProvider(authProvider.userProfile!.avatarUrl!)
-                      : null,
-                  child: authProvider.userProfile?.avatarUrl == null
-                      ? Icon(Icons.person, size: 50)
-                      : null,
                 ),
                 SizedBox(height: 16),
                 Text(
-                  '@${authProvider.userProfile?.username ?? ''}',
-                  style: Theme.of(context).textTheme.titleLarge,
+                  authProvider.userProfile?.username ?? 'User',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                SizedBox(height: 16),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  child: SizedBox(
+                    width: 140,
+                    child: CustomButton(
+                      text: 'Edit Profile',
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => EditProfilePage()),
+                        );
+                      },
+                    ),
+                  ),
                 ),
               ],
             ),
           ),
           Expanded(
-            child: ListView.builder(
-              itemCount: journalProvider.userEntries.length,
-              itemBuilder: (context, index) {
-                final entry = journalProvider.userEntries[index];
-                return JournalPostCard(
-                  entry: entry,
-                  username: authProvider.userProfile?.username ?? 'User',
-                  avatarUrl: authProvider.userProfile?.avatarUrl,
-                  onMenuPressed: () => _showEntryOptions(context, entry),
-                );
-              },
-            ),
+          child: ListView.builder(
+            itemCount: journalProvider.userEntries.length,
+            itemBuilder: (context, index) {
+              final entry = journalProvider.userEntries[index];
+              return JournalPostCard(
+                entry: entry,
+                username: authProvider.userProfile?.username ?? 'User',
+                avatarUrl: authProvider.userProfile?.avatarUrl,
+                onMenuPressed: () => _showEntryOptions(context, entry),
+              );
+            },
           ),
+        ),
         ],
       ),
     );

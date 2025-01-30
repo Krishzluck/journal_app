@@ -9,12 +9,14 @@ class UserProfile {
   final String email;
   String username;
   String? avatarUrl;
+  final DateTime createdAt;
 
   UserProfile({
     required this.id,
     required this.email,
     required this.username,
-    this.avatarUrl
+    this.avatarUrl,
+    required this.createdAt,
   });
 
   Map<String, dynamic> toJson() {
@@ -23,6 +25,7 @@ class UserProfile {
       'email': email,
       'username': username,
       'avatarUrl': avatarUrl,
+      'created_at': createdAt.toIso8601String(),
     };
   }
 
@@ -32,6 +35,7 @@ class UserProfile {
       email: json['email'],
       username: json['username'],
       avatarUrl: json['avatarUrl'],
+      createdAt: DateTime.parse(json['created_at'].toString()),
     );
   }
 }
@@ -39,6 +43,9 @@ class UserProfile {
 class AuthProvider extends ChangeNotifier {
   UserProfile? _userProfile;
   UserProfile? get userProfile => _userProfile;
+
+  bool _isLoading = false;
+  bool get isLoading => _isLoading;
 
   AuthProvider() {
     _init();
@@ -99,6 +106,7 @@ class AuthProvider extends ChangeNotifier {
           email: user.email!,
           username: response['username'],
           avatarUrl: response['avatar_url'],
+          createdAt: DateTime.parse(user.createdAt),
         );
         await _saveUserProfileToPrefs();
         notifyListeners();
@@ -109,6 +117,8 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> updateProfile({String? username, String? avatarUrl}) async {
+    _isLoading = true;
+    notifyListeners();
     if (_userProfile == null) return;
 
     final updates = {
@@ -128,6 +138,9 @@ class AuthProvider extends ChangeNotifier {
     } catch (e) {
       print('Error updating profile: $e');
       rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
   }
 
@@ -155,6 +168,8 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> signIn(String email, String password) async {
+    _isLoading = true;
+    notifyListeners();
     try {
       final response = await Supabase.instance.client.auth.signInWithPassword(
         email: email,
@@ -166,10 +181,15 @@ class AuthProvider extends ChangeNotifier {
     } catch (e) {
       print('Error signing in: $e');
       rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
   }
 
   Future<void> signUp(String email, String password, String username) async {
+    _isLoading = true;
+    notifyListeners();
     try {
       final response = await Supabase.instance.client.auth.signUp(
         email: email,
@@ -188,6 +208,9 @@ class AuthProvider extends ChangeNotifier {
     } catch (e) {
       print('Error signing up: $e');
       rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
   }
 
@@ -229,12 +252,18 @@ class AuthProvider extends ChangeNotifier {
           email: response['email'] ?? '',
           username: response['username'] ?? '',
           avatarUrl: response['avatar_url'],
+          createdAt: DateTime.now(),
         );
       }
     } catch (e) {
       print('Error fetching user profile: $e');
     }
     return null;
+  }
+
+  Future<bool> isLoggedIn() async {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    return currentUser != null;
   }
 }
 

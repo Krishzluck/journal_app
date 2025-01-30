@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 import 'package:journal_app/providers/journal_provider.dart';
 import 'package:journal_app/screens/journal_details_page.dart';
 import 'package:journal_app/screens/user_profile_page.dart';
+import 'package:journal_app/widgets/user_avatar.dart';
 
 class JournalPostCard extends StatelessWidget {
   final JournalEntry entry;
@@ -61,12 +61,9 @@ class JournalPostCard extends StatelessWidget {
                           ),
                         );
                       },
-                      child: CircleAvatar(
+                      child: UserAvatar(
+                        imageUrl: avatarUrl,
                         radius: 20,
-                        backgroundImage: avatarUrl != null
-                            ? CachedNetworkImageProvider(avatarUrl!)
-                            : null,
-                        child: avatarUrl == null ? Icon(Icons.person) : null,
                       ),
                     ),
                     SizedBox(width: 12),
@@ -132,10 +129,12 @@ class JournalPostCard extends StatelessWidget {
                 ),
                 SizedBox(height: 8),
                 Text(
-                  entry.content.trim(),
+                  entry.content.split('\n').map((line) => line.trim()).join('\n').trimRight(),
                   style: TextStyle(
                     fontSize: 14,
-                    color: Colors.grey[800],
+                    color: Theme.of(context).brightness == Brightness.dark 
+                        ? Colors.grey[300]
+                        : Colors.grey[800],
                     height: 1.4,
                   ),
                   maxLines: 3,

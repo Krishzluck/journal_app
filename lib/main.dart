@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:journal_app/providers/auth_provider.dart';
 import 'package:journal_app/providers/journal_provider.dart';
-import 'package:journal_app/screens/auth_wrapper.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:journal_app/screens/splash_screen.dart';
+import 'package:journal_app/providers/theme_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,43 +26,26 @@ void main() async {
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => JournalProvider()),
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
       ],
-      child: MyApp(),
+      child: const MyApp(),
     ),
   );
 }
 
 class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
   @override
   Widget build(BuildContext context) {
+    final themeProvider = Provider.of<ThemeProvider>(context);
     return MaterialApp(
       title: 'Journal App',
-      theme: ThemeData(
-        primaryColor: Color(0xFF4D6BFE),
-        primarySwatch: MaterialColor(0xFF4D6BFE, {
-          50: Color(0xFFEEF1FF),
-          100: Color(0xFFD4DCFF),
-          200: Color(0xFFB7C5FF),
-          300: Color(0xFF9AADFF),
-          400: Color(0xFF839CFF),
-          500: Color(0xFF4D6BFE),
-          600: Color(0xFF4763E5),
-          700: Color(0xFF3F57CC),
-          800: Color(0xFF374BB2),
-          900: Color(0xFF2F3F99),
-        }),
-        scaffoldBackgroundColor: Colors.white,
-        appBarTheme: AppBarTheme(
-          backgroundColor: Color(0xFF4D6BFE),
-          foregroundColor: Colors.white,
-          elevation: 0,
-        ),
-        colorScheme: ColorScheme.light(
-          primary: Color(0xFF4D6BFE),
-          onPrimary: Colors.white,
-        ),
-      ),
-      home: AuthWrapper(),
+      debugShowCheckedModeBanner: false,
+      themeMode: themeProvider.themeMode,
+      theme: themeProvider.themeData,
+      darkTheme: themeProvider.themeData,
+      home: const SplashScreen(),
     );
   }
 }

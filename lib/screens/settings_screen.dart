@@ -1,18 +1,34 @@
+import 'dart:developer';
+
 import 'package:flutter/material.dart';
 import 'package:journal_app/providers/auth_provider.dart';
 import 'package:journal_app/screens/profile_page.dart';
 import 'package:provider/provider.dart';
+import 'package:journal_app/providers/theme_provider.dart';
+import 'package:journal_app/screens/calendar_screen.dart';
+import 'package:journal_app/screens/auth_page.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class SettingsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
+    
     return Scaffold(
       appBar: AppBar(
         title: Text('Settings'),
       ),
+      floatingActionButton: FloatingActionButton(onPressed: () async{
+        final response = await Supabase.instance.client
+          .from('journal_entries')
+          .select()
+          .eq('is_public', true)
+          .order('created_at', ascending: false);
+
+          log(response.toString());
+      }),
       body: ListView(
         children: [
-           ListTile(
+          ListTile(
             leading: Icon(Icons.person),
             title: Text('Profile'),
             onTap: () {
@@ -23,14 +39,23 @@ class SettingsPage extends StatelessWidget {
             },
           ),
           ListTile(
+            leading: Icon(Icons.calendar_today),
+            title: Text('Mood Calendar'),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => CalendarScreen()),
+              );
+            },
+          ),
+          ListTile(
             leading: Icon(Icons.brightness_6),
             title: Text('Theme'),
-            trailing: Switch(
-              value: Theme.of(context).brightness == Brightness.dark,
-              onChanged: (value) {
-                // TODO: Implement theme changing functionality
-              },
+            trailing: Text(
+              _getThemeModeName(Provider.of<ThemeProvider>(context).themeMode),
+              style: TextStyle(color: Colors.grey[600]),
             ),
+            onTap: () => _showThemeModeBottomSheet(context),
           ),
           ListTile(
             leading: Icon(Icons.logout),
@@ -58,12 +83,93 @@ class SettingsPage extends StatelessWidget {
             ),
             TextButton(
               child: Text('Logout'),
-              onPressed: () {
-                Navigator.of(context).pop();
-                Provider.of<AuthProvider>(context, listen: false).signOut();
+              onPressed: () async {
+                // Reset to home tab
+                Provider.of<ThemeProvider>(context, listen: false).resetCurrentIndex();
+                // Sign out
+                await Provider.of<AuthProvider>(context, listen: false).signOut();
+                // Navigate to auth page
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (context) => AuthPage()),
+                  (Route<dynamic> route) => false,
+                );
               },
             ),
           ],
+        );
+      },
+    );
+  }
+
+  String _getThemeModeName(ThemeMode themeMode) {
+    switch (themeMode) {
+      case ThemeMode.light:
+        return 'Light';
+      case ThemeMode.dark:
+        return 'Dark';
+      case ThemeMode.system:
+        return 'System';
+    }
+  }
+
+  void _showThemeModeBottomSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        final themeProvider = Provider.of<ThemeProvider>(context);
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                title: Text(
+                  'Choose Theme',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                  ),
+                ),
+              ),
+              Divider(),
+              ListTile(
+                leading: Icon(Icons.brightness_5),
+                title: Text('Light'),
+                onTap: () {
+                  themeProvider.setThemeMode(ThemeMode.light);
+                  Navigator.pop(context);
+                },
+                trailing: themeProvider.themeMode == ThemeMode.light
+                    ? Icon(Icons.check, color: Theme.of(context).primaryColor)
+                    : null,
+              ),
+              ListTile(
+                leading: Icon(Icons.brightness_4),
+                title: Text('Dark'),
+                onTap: () {
+                  themeProvider.setThemeMode(ThemeMode.dark);
+                  Navigator.pop(context);
+                },
+                trailing: themeProvider.themeMode == ThemeMode.dark
+                    ? Icon(Icons.check, color: Theme.of(context).primaryColor)
+                    : null,
+              ),
+              ListTile(
+                leading: Icon(Icons.brightness_6),
+                title: Text('System'),
+                onTap: () {
+                  themeProvider.setThemeMode(ThemeMode.system);
+                  Navigator.pop(context);
+                },
+                trailing: themeProvider.themeMode == ThemeMode.system
+                    ? Icon(Icons.check, color: Theme.of(context).primaryColor)
+                    : null,
+              ),
+              SizedBox(height: 8),
+            ],
+          ),
         );
       },
     );

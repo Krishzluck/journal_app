@@ -4,14 +4,14 @@ class CustomButton extends StatelessWidget {
   final String text;
   final VoidCallback onPressed;
   final bool isLoading;
-  final bool disabled;
+  final EdgeInsetsGeometry? padding;
 
   const CustomButton({
     Key? key,
     required this.text,
     required this.onPressed,
     this.isLoading = false,
-    this.disabled = false,
+    this.padding,
   }) : super(key: key);
 
   @override
@@ -19,13 +19,13 @@ class CustomButton extends StatelessWidget {
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton(
-        onPressed: disabled || isLoading ? null : onPressed,
+        onPressed: isLoading ? null : onPressed,
         style: ElevatedButton.styleFrom(
           backgroundColor: Theme.of(context).primaryColor,
           foregroundColor: Colors.white,
-          padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+          padding: padding ?? const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(32),
+            borderRadius: BorderRadius.circular(8),
           ),
           elevation: 0,
         ),

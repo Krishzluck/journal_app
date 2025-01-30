@@ -83,6 +83,7 @@ class _JournalEntryPageState extends State<JournalEntryPage> {
                 children: moodColors.keys.map((mood) {
                   final isSelected = _selectedMood == mood;
                   final moodColor = moodColors[mood]!;
+                  final isDarkMode = Theme.of(context).brightness == Brightness.dark;
                   
                   return InkWell(
                     onTap: () {
@@ -90,12 +91,13 @@ class _JournalEntryPageState extends State<JournalEntryPage> {
                         _selectedMood = mood;
                       });
                     },
+                    borderRadius: BorderRadius.circular(32),
                     child: Container(
                       padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       decoration: BoxDecoration(
                         color: isSelected ? moodColor : Colors.transparent,
                         border: Border.all(
-                          color: isSelected ? moodColor : Colors.black,
+                          color: isSelected ? moodColor : (isDarkMode ? Colors.white : Colors.black),
                           width: 1,
                         ),
                         borderRadius: BorderRadius.circular(32),
@@ -103,7 +105,9 @@ class _JournalEntryPageState extends State<JournalEntryPage> {
                       child: Text(
                         mood,
                         style: TextStyle(
-                          color: isSelected ? Colors.white : Colors.black,
+                          color: isSelected 
+                              ? Colors.white 
+                              : (isDarkMode ? Colors.white : Colors.black),
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -125,6 +129,7 @@ class _JournalEntryPageState extends State<JournalEntryPage> {
               CustomButton(
                 text: 'Save Journal',
                 onPressed: _saveEntry,
+                isLoading: Provider.of<JournalProvider>(context).isLoading,
               ),
             ],
           ),

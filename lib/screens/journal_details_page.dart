@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:journal_app/providers/auth_provider.dart';
@@ -6,6 +5,7 @@ import 'package:journal_app/providers/journal_provider.dart';
 import 'package:journal_app/screens/journal_entry_page.dart';
 import 'package:journal_app/screens/user_profile_page.dart';
 import 'package:provider/provider.dart';
+import 'package:journal_app/widgets/user_avatar.dart';
 
 class JournalDetailsPage extends StatelessWidget {
   final JournalEntry entry;
@@ -37,7 +37,7 @@ class JournalDetailsPage extends StatelessWidget {
           future: authProvider.getUserProfile(entry.userId),
           builder: (context, snapshot) {
             final userProfile = snapshot.data;
-            return InkWell(
+            return GestureDetector(
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -46,14 +46,9 @@ class JournalDetailsPage extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  CircleAvatar(
+                  UserAvatar(
+                    imageUrl: userProfile?.avatarUrl,
                     radius: 20,
-                    backgroundImage: userProfile?.avatarUrl != null
-                        ? CachedNetworkImageProvider(userProfile!.avatarUrl!)
-                        : null,
-                    child: userProfile?.avatarUrl == null
-                        ? Icon(Icons.person, size: 20)
-                        : null,
                   ),
                   SizedBox(width: 12),
                   Text(
@@ -93,86 +88,88 @@ class JournalDetailsPage extends StatelessWidget {
             ),
         ],
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          entry.title,
-                          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            entry.title,
+                            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
-                        ),
-                        SizedBox(height: 16),
-                        Text(
-                          entry.content,
-                          style: Theme.of(context).textTheme.bodyLarge,
-                        ),
-                        SizedBox(height: 16),
-                        Row(
-                          children: [
-                            Container(
-                              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: moodColors[entry.mood]?.withOpacity(0.2),
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: Text(
-                                entry.mood,
-                                style: TextStyle(
-                                  color: moodColors[entry.mood],
-                                  fontWeight: FontWeight.w500,
+                          SizedBox(height: 16),
+                          Text(
+                            entry.content,
+                            style: Theme.of(context).textTheme.bodyLarge,
+                          ),
+                          SizedBox(height: 16),
+                          Row(
+                            children: [
+                              Container(
+                                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: moodColors[entry.mood]?.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: Text(
+                                  entry.mood,
+                                  style: TextStyle(
+                                    color: moodColors[entry.mood],
+                                    fontWeight: FontWeight.w500,
+                                  ),
                                 ),
                               ),
-                            ),
-                            SizedBox(width: 12),
-                            Text(
-                              _formatDateTime(entry.createdAt),
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: Colors.grey[600],
+                              SizedBox(width: 12),
+                              Text(
+                                _formatDateTime(entry.createdAt),
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: Colors.grey[600],
+                                ),
                               ),
-                            ),
-                          ],
-                        ),
-                      ],
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  Divider(height: 1, thickness: 1, color: Colors.grey[600]),
-                  Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: FutureBuilder<List<Comment>>(
-                      future: journalProvider.getCommentsForEntry(entry.id),
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState == ConnectionState.waiting) {
-                          return Center(child: CircularProgressIndicator());
-                        }
-                        if (snapshot.hasError) {
-                          return Text('Error loading comments');
-                        }
-                        final comments = snapshot.data ?? [];
-                        return Column(
-                          children: comments.map((comment) => CommentWidget(comment: comment)).toList(),
-                        );
-                      },
+                    Divider(height: 1, thickness: 1, color: Colors.grey[600]),
+                    Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: FutureBuilder<List<Comment>>(
+                        future: journalProvider.getCommentsForEntry(entry.id),
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState == ConnectionState.waiting) {
+                            return Center(child: CircularProgressIndicator());
+                          }
+                          if (snapshot.hasError) {
+                            return Text('Error loading comments');
+                          }
+                          final comments = snapshot.data ?? [];
+                          return Column(
+                            children: comments.map((comment) => CommentWidget(comment: comment)).toList(),
+                          );
+                        },
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: AddCommentWidget(entryId: entry.id),
-          ),
-        ],
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: AddCommentWidget(entryId: entry.id),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -225,14 +222,9 @@ class CommentWidget extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              CircleAvatar(
+              UserAvatar(
+                imageUrl: comment.userAvatarUrl,
                 radius: 20,
-                backgroundImage: comment.userAvatarUrl != null
-                    ? CachedNetworkImageProvider(comment.userAvatarUrl!)
-                    : null,
-                child: comment.userAvatarUrl == null
-                    ? Icon(Icons.person, size: 24)
-                    : null,
               ),
               SizedBox(width: 12),
               Expanded(

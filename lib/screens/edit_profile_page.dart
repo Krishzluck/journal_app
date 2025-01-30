@@ -1,11 +1,12 @@
 import 'dart:io';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:journal_app/providers/auth_provider.dart';
 import 'package:journal_app/widgets/common_text_field.dart';
 import 'package:journal_app/widgets/custom_button.dart';
 import 'package:provider/provider.dart';
+import 'package:journal_app/utils/snackbar_utils.dart';
+import 'package:journal_app/widgets/user_avatar.dart';
 
 class EditProfilePage extends StatefulWidget {
   @override
@@ -56,16 +57,31 @@ class _EditProfilePageState extends State<EditProfilePage> {
             children: [
               GestureDetector(
                 onTap: _pickImage,
-                child: CircleAvatar(
-                  radius: 50,
-                  backgroundImage: _imageFile != null
-                      ? FileImage(_imageFile!)
-                      : (authProvider.userProfile?.avatarUrl != null
-                          ? CachedNetworkImageProvider(authProvider.userProfile!.avatarUrl!)
-                          : null) as ImageProvider?,
-                  child: _imageFile == null && authProvider.userProfile?.avatarUrl == null
-                      ? Icon(Icons.person, size: 50)
-                      : null,
+                child: Stack(
+                  children: [
+                    UserAvatar(
+                      imageUrl: _imageFile != null 
+                          ? null  // Don't show network image if local file is selected
+                          : authProvider.userProfile?.avatarUrl,
+                      radius: 50,
+                    ),
+                    Positioned(
+                      bottom: 0,
+                      right: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).primaryColor,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.camera_alt,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               SizedBox(height: 16),
@@ -87,6 +103,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
               CustomButton(
                 text: 'Update Profile',
                 onPressed: _updateProfile,
+                isLoading: Provider.of<AuthProvider>(context).isLoading,
               ),
             ],
           ),
@@ -110,14 +127,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
           avatarUrl: newAvatarUrl ?? authProvider.userProfile?.avatarUrl,
         );
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Profile updated successfully')),
-        );
+        showThemedSnackBar(context, 'Profile updated successfully');
         Navigator.pop(context);
       } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error updating profile: $e')),
-        );
+        showThemedSnackBar(context, 'Error updating profile: $e', isError: true);
       }
     }
   }
