@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:journal_app/main.dart';
+import 'package:journal_app/providers/blocked_users_provider.dart';
+import 'package:journal_app/providers/journal_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'dart:io';
+import 'package:provider/provider.dart';
+import 'package:journal_app/providers/follow_provider.dart';
 
 class UserProfile {
   final String id;
@@ -24,7 +29,7 @@ class UserProfile {
       'id': id,
       'email': email,
       'username': username,
-      'avatarUrl': avatarUrl,
+      'avatar_url': avatarUrl,
       'created_at': createdAt.toIso8601String(),
     };
   }
@@ -34,8 +39,8 @@ class UserProfile {
       id: json['id'],
       email: json['email'],
       username: json['username'],
-      avatarUrl: json['avatarUrl'],
-      createdAt: DateTime.parse(json['created_at'].toString()),
+      avatarUrl: json['avatar_url'],
+      createdAt: json['created_at'] != null ? DateTime.parse(json['created_at'].toString()) : DateTime.now(),
     );
   }
 }
@@ -200,6 +205,7 @@ class AuthProvider extends ChangeNotifier {
           'id': response.user!.id,
           'username': username,
           'email': email,
+          'created_at': DateTime.now().toIso8601String(),
         });
         await _loadUserProfile();
       } else {
@@ -214,11 +220,23 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> signOut() async {
+  Future<void> signOut(BuildContext context) async {
     try {
       await Supabase.instance.client.auth.signOut();
       _userProfile = null;
-      await _clearUserProfileFromPrefs();
+
+      // Clear providers
+      Provider.of<JournalProvider>(context, listen: false).clearData();
+      Provider.of<BlockedUsersProvider>(context, listen: false).clearData();
+
+      // Clear SharedPreferences except theme
+      final prefs = await SharedPreferences.getInstance();
+      final themeMode = prefs.getString('themeMode');
+      await prefs.clear();
+      if (themeMode != null) {
+        await prefs.setString('themeMode', themeMode);
+      }
+
       notifyListeners();
     } catch (e) {
       print('Error signing out: $e');
@@ -252,7 +270,7 @@ class AuthProvider extends ChangeNotifier {
           email: response['email'] ?? '',
           username: response['username'] ?? '',
           avatarUrl: response['avatar_url'],
-          createdAt: DateTime.now(),
+          createdAt: DateTime.parse(response['created_at']),
         );
       }
     } catch (e) {
@@ -264,6 +282,28 @@ class AuthProvider extends ChangeNotifier {
   Future<bool> isLoggedIn() async {
     final currentUser = Supabase.instance.client.auth.currentUser;
     return currentUser != null;
+  }
+
+  Future<void> loadUserData() async {
+    try {
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user != null) {
+        final data = await Supabase.instance.client
+            .from('profiles')
+            .select()
+            .eq('id', user.id)
+            .single();
+        _userProfile = UserProfile.fromJson(data);
+        
+        // Load follow data after getting user profile
+        await Provider.of<FollowProvider>(navigatorKey.currentContext!, listen: false)
+            .loadFollowData(_userProfile!.id);
+            
+        notifyListeners();
+      }
+    } catch (e) {
+      print('Error loading user data: $e');
+    }
   }
 }
 

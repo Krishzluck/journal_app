@@ -3,14 +3,99 @@ import 'package:intl/intl.dart';
 import 'package:journal_app/providers/auth_provider.dart';
 import 'package:journal_app/providers/journal_provider.dart';
 import 'package:journal_app/screens/journal_entry_page.dart';
+import 'package:journal_app/screens/profile_page.dart';
 import 'package:journal_app/screens/user_profile_page.dart';
 import 'package:provider/provider.dart';
 import 'package:journal_app/widgets/user_avatar.dart';
 
-class JournalDetailsPage extends StatelessWidget {
+class JournalDetailsPage extends StatefulWidget {
   final JournalEntry entry;
 
   JournalDetailsPage({required this.entry});
+
+  @override
+  _JournalDetailsPageState createState() => _JournalDetailsPageState();
+}
+
+class _JournalDetailsPageState extends State<JournalDetailsPage> {
+  final TextEditingController _commentController = TextEditingController();
+  List<Comment> _comments = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadComments();
+  }
+
+  Future<void> _loadComments() async {
+    setState(() => _isLoading = true);
+    try {
+      final comments = await Provider.of<JournalProvider>(context, listen: false)
+          .getCommentsForEntry(widget.entry.id);
+      
+      // Sort comments by date (newest first)
+      comments.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      
+      setState(() {
+        _comments = comments;
+        _isLoading = false;
+      });
+    } catch (e) {
+      print('Error loading comments: $e');
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _addComment(String text) async {
+    if (text.trim().isEmpty) return;
+
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final journalProvider = Provider.of<JournalProvider>(context, listen: false);
+    
+    // Hide keyboard
+    FocusScope.of(context).unfocus();
+
+    final newComment = Comment(
+      id: DateTime.now().toString(),
+      journalEntryId: widget.entry.id,
+      userId: authProvider.userProfile!.id,
+      content: text.trim(),
+      createdAt: DateTime.now(),
+      userAvatarUrl: authProvider.userProfile?.avatarUrl,
+      userName: authProvider.userProfile?.username,
+    );
+
+    // Optimistically add comment to local list
+    setState(() {
+      _comments.insert(0, newComment);
+    });
+
+    try {
+      // Add comment to database
+      final savedComment = await journalProvider.addComment(
+        widget.entry.id,
+        text.trim(),
+      );
+
+      // Update local list with actual comment data
+      setState(() {
+        final index = _comments.indexWhere((c) => c.id == newComment.id);
+        if (index != -1) {
+          _comments[index] = savedComment;
+        }
+      });
+    } catch (e) {
+      print('Error adding comment: $e');
+      // Remove optimistically added comment on error
+      setState(() {
+        _comments.removeWhere((c) => c.id == newComment.id);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to add comment')),
+      );
+    }
+  }
 
   String _formatDateTime(DateTime dateTime) {
     return DateFormat('MMM d \'at\' h:mm a').format(dateTime);
@@ -20,7 +105,7 @@ class JournalDetailsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
     final journalProvider = Provider.of<JournalProvider>(context);
-    final isCurrentUserEntry = authProvider.userProfile?.id == entry.userId;
+    final isCurrentUserEntry = authProvider.userProfile?.id == widget.entry.userId;
 
     return Scaffold(
       appBar: AppBar(
@@ -34,14 +119,14 @@ class JournalDetailsPage extends StatelessWidget {
         ),
         titleSpacing: 0,
         title: FutureBuilder<UserProfile?>(
-          future: authProvider.getUserProfile(entry.userId),
+          future: authProvider.getUserProfile(widget.entry.userId),
           builder: (context, snapshot) {
             final userProfile = snapshot.data;
             return GestureDetector(
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => UserProfilePage(userId: entry.userId),
+                  builder: (context) => UserProfilePage(userId: widget.entry.userId),
                 ),
               ),
               child: Row(
@@ -68,7 +153,7 @@ class JournalDetailsPage extends StatelessWidget {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => JournalEntryPage(entry: entry),
+                      builder: (context) => JournalEntryPage(entry: widget.entry),
                     ),
                   );
                 } else if (value == 'delete') {
@@ -92,81 +177,88 @@ class JournalDetailsPage extends StatelessWidget {
         child: Column(
           children: [
             Expanded(
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            entry.title,
-                            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
+              child: RefreshIndicator.adaptive(
+                onRefresh: _loadComments,
+                child: SingleChildScrollView(
+                  physics: AlwaysScrollableScrollPhysics(),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              widget.entry.title,
+                              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
-                          ),
-                          SizedBox(height: 16),
-                          Text(
-                            entry.content,
-                            style: Theme.of(context).textTheme.bodyLarge,
-                          ),
-                          SizedBox(height: 16),
-                          Row(
-                            children: [
-                              Container(
-                                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: moodColors[entry.mood]?.withOpacity(0.2),
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                                child: Text(
-                                  entry.mood,
-                                  style: TextStyle(
-                                    color: moodColors[entry.mood],
-                                    fontWeight: FontWeight.w500,
+                            SizedBox(height: 16),
+                            Text(
+                              widget.entry.content,
+                              style: Theme.of(context).textTheme.bodyLarge,
+                            ),
+                            SizedBox(height: 16),
+                            Row(
+                              children: [
+                                Container(
+                                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: moodColors[widget.entry.mood]?.withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  child: Text(
+                                    widget.entry.mood,
+                                    style: TextStyle(
+                                      color: moodColors[widget.entry.mood],
+                                      fontWeight: FontWeight.w500,
+                                    ),
                                   ),
                                 ),
-                              ),
-                              SizedBox(width: 12),
-                              Text(
-                                _formatDateTime(entry.createdAt),
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: Colors.grey[600],
+                                SizedBox(width: 12),
+                                Text(
+                                  _formatDateTime(widget.entry.createdAt),
+                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: Colors.grey[600],
+                                  ),
                                 ),
-                              ),
-                            ],
-                          ),
-                        ],
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    Divider(height: 1, thickness: 1, color: Colors.grey[600]),
-                    Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: FutureBuilder<List<Comment>>(
-                        future: journalProvider.getCommentsForEntry(entry.id),
-                        builder: (context, snapshot) {
-                          if (snapshot.connectionState == ConnectionState.waiting) {
-                            return Center(child: CircularProgressIndicator());
-                          }
-                          if (snapshot.hasError) {
-                            return Text('Error loading comments');
-                          }
-                          final comments = snapshot.data ?? [];
-                          return Column(
-                            children: comments.map((comment) => CommentWidget(comment: comment)).toList(),
-                          );
-                        },
+                      Divider(height: 1, thickness: 1, color: Colors.grey[600]),
+                      Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: FutureBuilder<List<Comment>>(
+                          future: journalProvider.getCommentsForEntry(widget.entry.id),
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState == ConnectionState.waiting) {
+                              return Center(child: CircularProgressIndicator());
+                            }
+                            if (snapshot.hasError) {
+                              return Text('Error loading comments');
+                            }
+                            final comments = snapshot.data ?? [];
+                            return Column(
+                              children: comments.map((comment) => CommentWidget(entry: widget.entry,comment: comment)).toList(),
+                            );
+                          },
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
             Padding(
               padding: const EdgeInsets.all(16.0),
-              child: AddCommentWidget(entryId: entry.id),
+              child: AddCommentWidget(
+                entryId: widget.entry.id,
+                onCommentAdded: _addComment,
+              ),
             ),
           ],
         ),
@@ -191,7 +283,7 @@ class JournalDetailsPage extends StatelessWidget {
             TextButton(
               child: Text('Delete'),
               onPressed: () {
-                Provider.of<JournalProvider>(context, listen: false).deleteEntry(entry.id);
+                Provider.of<JournalProvider>(context, listen: false).deleteEntry(widget.entry.id);
                 Navigator.of(context).pop(); // Close the dialog
                 Navigator.of(context).pop(); // Go back to the previous screen
               },
@@ -205,15 +297,21 @@ class JournalDetailsPage extends StatelessWidget {
 
 class CommentWidget extends StatelessWidget {
   final Comment comment;
+  final JournalEntry entry;
+  final VoidCallback? onDelete;
 
-  CommentWidget({required this.comment});
-
-  String _formatDateTime(DateTime dateTime) {
-    return DateFormat('MMM d \'at\' h:mm a').format(dateTime);
-  }
+  CommentWidget({
+    required this.comment, 
+    required this.entry, 
+    this.onDelete,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final currentUserId = Provider.of<AuthProvider>(context, listen: false).userProfile?.id;
+    final isCurrentUserComment = currentUserId == comment.userId;
+    final isEntryOwner = entry.userId == currentUserId;
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12.0),
       child: Column(
@@ -222,23 +320,33 @@ class CommentWidget extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              UserAvatar(
-                imageUrl: comment.userAvatarUrl,
-                radius: 20,
+              GestureDetector(
+                onTap: () => _navigateToProfile(context),
+                child: UserAvatar(
+                  imageUrl: comment.userAvatarUrl,
+                  radius: 20,
+                ),
               ),
               SizedBox(width: 12),
               Expanded(
-                child: Text(
-                  comment.userName ?? 'User',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
+                child: GestureDetector(
+                  onTap: () => _navigateToProfile(context),
+                  child: Text(
+                    comment.userName ?? 'User',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
                   ),
                 ),
               ),
+              if (isCurrentUserComment || isEntryOwner)
+                IconButton(
+                  icon: Icon(Icons.more_vert),
+                  onPressed: () => _showCommentOptions(context),
+                ),
             ],
           ),
-
           SizedBox(height: 4),
           Text(
             comment.content,
@@ -255,12 +363,89 @@ class CommentWidget extends StatelessWidget {
       ),
     );
   }
+
+  void _showCommentOptions(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: Icon(Icons.delete, color: Colors.red),
+                title: Text('Delete', style: TextStyle(color: Colors.red)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showDeleteConfirmation(context);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showDeleteConfirmation(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Delete Comment'),
+          content: Text('Are you sure you want to delete this comment?'),
+          actions: [
+            TextButton(
+              child: Text('Cancel'),
+              onPressed: () => Navigator.pop(context),
+            ),
+            TextButton(
+              child: Text('Delete', style: TextStyle(color: Colors.red)),
+              onPressed: () async {
+                Navigator.pop(context);
+                try {
+                  await Provider.of<JournalProvider>(context, listen: false)
+                      .deleteComment(comment.id);
+                  if (onDelete != null) onDelete!();
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed to delete comment')),
+                  );
+                }
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  String _formatDateTime(DateTime dateTime) {
+    return DateFormat('MMM d \'at\' h:mm a').format(dateTime);
+  }
+
+  void _navigateToProfile(BuildContext context) {
+    final currentUserId = Provider.of<AuthProvider>(context, listen: false).userProfile?.id;
+    
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => currentUserId == comment.userId 
+            ? ProfilePage() 
+            : UserProfilePage(userId: comment.userId),
+      ),
+    );
+  }
 }
 
 class AddCommentWidget extends StatefulWidget {
   final String entryId;
+  final Function(String) onCommentAdded;
 
-  AddCommentWidget({required this.entryId});
+  AddCommentWidget({
+    required this.entryId,
+    required this.onCommentAdded,
+  });
 
   @override
   _AddCommentWidgetState createState() => _AddCommentWidgetState();
@@ -274,30 +459,28 @@ class _AddCommentWidgetState extends State<AddCommentWidget> {
     return Row(
       children: [
         Expanded(
-          child: CommonTextField(
+          child: TextField(
             controller: _commentController,
-            hintText: 'Write a comment...',
+            decoration: InputDecoration(
+              hintText: 'Add a comment...',
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            ),
           ),
         ),
         IconButton(
           icon: Icon(Icons.send),
-          onPressed: () async {
+          onPressed: () {
             if (_commentController.text.trim().isNotEmpty) {
-              await Provider.of<JournalProvider>(context, listen: false)
-                  .addComment(widget.entryId, _commentController.text.trim());
+              widget.onCommentAdded(_commentController.text);
               _commentController.clear();
-              setState(() {});
             }
           },
         ),
       ],
     );
-  }
-
-  @override
-  void dispose() {
-    _commentController.dispose();
-    super.dispose();
   }
 }
 

@@ -1,13 +1,11 @@
-import 'dart:developer';
-
 import 'package:flutter/material.dart';
 import 'package:journal_app/providers/auth_provider.dart';
-import 'package:journal_app/screens/profile_page.dart';
 import 'package:provider/provider.dart';
 import 'package:journal_app/providers/theme_provider.dart';
 import 'package:journal_app/screens/calendar_screen.dart';
 import 'package:journal_app/screens/auth_page.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:journal_app/screens/saved_journals_screen.dart';
+import 'package:journal_app/screens/blocked_users_screen.dart';
 
 class SettingsPage extends StatelessWidget {
   @override
@@ -17,27 +15,8 @@ class SettingsPage extends StatelessWidget {
       appBar: AppBar(
         title: Text('Settings'),
       ),
-      floatingActionButton: FloatingActionButton(onPressed: () async{
-        final response = await Supabase.instance.client
-          .from('journal_entries')
-          .select()
-          .eq('is_public', true)
-          .order('created_at', ascending: false);
-
-          log(response.toString());
-      }),
       body: ListView(
         children: [
-          ListTile(
-            leading: Icon(Icons.person),
-            title: Text('Profile'),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => ProfilePage()),
-              );
-            },
-          ),
           ListTile(
             leading: Icon(Icons.calendar_today),
             title: Text('Mood Calendar'),
@@ -45,6 +24,16 @@ class SettingsPage extends StatelessWidget {
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => CalendarScreen()),
+              );
+            },
+          ),
+          ListTile(
+            leading: Icon(Icons.bookmark),
+            title: Text('Saved Journals'),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => SavedJournalsScreen()),
               );
             },
           ),
@@ -58,8 +47,21 @@ class SettingsPage extends StatelessWidget {
             onTap: () => _showThemeModeBottomSheet(context),
           ),
           ListTile(
-            leading: Icon(Icons.logout),
-            title: Text('Logout'),
+            leading: Icon(Icons.block),
+            title: Text('Blocked Users'),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => BlockedUsersScreen()),
+              );
+            },
+          ),
+          ListTile(
+            leading: Icon(Icons.logout, color: Colors.red),
+            title: Text(
+              'Logout',
+              style: TextStyle(color: Colors.red),
+            ),
             onTap: () => _showLogoutDialog(context),
           ),
         ],
@@ -87,7 +89,7 @@ class SettingsPage extends StatelessWidget {
                 // Reset to home tab
                 Provider.of<ThemeProvider>(context, listen: false).resetCurrentIndex();
                 // Sign out
-                await Provider.of<AuthProvider>(context, listen: false).signOut();
+                await Provider.of<AuthProvider>(context, listen: false).signOut(context);
                 // Navigate to auth page
                 Navigator.of(context).pushAndRemoveUntil(
                   MaterialPageRoute(builder: (context) => AuthPage()),

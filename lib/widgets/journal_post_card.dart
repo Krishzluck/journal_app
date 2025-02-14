@@ -4,6 +4,10 @@ import 'package:journal_app/providers/journal_provider.dart';
 import 'package:journal_app/screens/journal_details_page.dart';
 import 'package:journal_app/screens/user_profile_page.dart';
 import 'package:journal_app/widgets/user_avatar.dart';
+import 'package:provider/provider.dart';
+import 'package:journal_app/providers/auth_provider.dart';
+import 'package:journal_app/screens/profile_page.dart';
+import 'package:journal_app/utils/date_utils.dart';
 
 class JournalPostCard extends StatelessWidget {
   final JournalEntry entry;
@@ -54,10 +58,13 @@ class JournalPostCard extends StatelessWidget {
                   children: [
                     InkWell(
                       onTap: () {
+                        final currentUserId = Provider.of<AuthProvider>(context, listen: false).userProfile?.id;
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) => UserProfilePage(userId: entry.userId),
+                            builder: (context) => currentUserId == entry.userId 
+                                ? ProfilePage() 
+                                : UserProfilePage(userId: entry.userId),
                           ),
                         );
                       },
@@ -73,10 +80,13 @@ class JournalPostCard extends StatelessWidget {
                         children: [
                           InkWell(
                             onTap: () {
+                              final currentUserId = Provider.of<AuthProvider>(context, listen: false).userProfile?.id;
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (context) => UserProfilePage(userId: entry.userId),
+                                  builder: (context) => currentUserId == entry.userId 
+                                      ? ProfilePage() 
+                                      : UserProfilePage(userId: entry.userId),
                                 ),
                               );
                             },
@@ -98,14 +108,25 @@ class JournalPostCard extends StatelessWidget {
                                       fontWeight: FontWeight.w500,
                                     ),
                                   ),
+                                  if (onMenuPressed != null) ...[
+                                    TextSpan(text: ' • '),
+                                    TextSpan(
+                                      text: entry.isPublic ? 'Public' : 'Private',
+                                      style: TextStyle(
+                                        color: Colors.grey[600],
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),
                           ),
                           Text(
-                            _formatDateTime(entry.createdAt),
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            DateFormatter.timeAgo(entry.createdAt),
+                            style: TextStyle(
                               color: Colors.grey[600],
+                              fontSize: 12,
                             ),
                           ),
                         ],
@@ -128,17 +149,40 @@ class JournalPostCard extends StatelessWidget {
                   ),
                 ),
                 SizedBox(height: 8),
-                Text(
-                  entry.content.split('\n').map((line) => line.trim()).join('\n').trimRight(),
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Theme.of(context).brightness == Brightness.dark 
-                        ? Colors.grey[300]
-                        : Colors.grey[800],
-                    height: 1.4,
-                  ),
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        entry.content.split('\n').map((line) => line.trim()).join('\n').trimRight(),
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Theme.of(context).brightness == Brightness.dark 
+                              ? Colors.grey[300]
+                              : Colors.grey[800],
+                          height: 1.4,
+                        ),
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    SizedBox(width: 6),
+                    Consumer<JournalProvider>(
+                      builder: (context, provider, child) {
+                        final isSaved = provider.savedEntries.any((e) => e.id == entry.id);
+                        return GestureDetector(
+                          onTap: () => provider.toggleSaveJournal(entry),
+                          child: Padding(
+                            padding: EdgeInsets.only(top: 2),
+                            child: Icon(
+                              isSaved ? Icons.bookmark : Icons.bookmark_border,
+                              color: isSaved ? Theme.of(context).primaryColor : Colors.grey[600],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
                 ),
               ],
             ),

@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:journal_app/providers/auth_provider.dart';
+import 'package:journal_app/providers/blocked_users_provider.dart';
+import 'package:journal_app/providers/follow_provider.dart';
 import 'package:journal_app/providers/journal_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:journal_app/screens/splash_screen.dart';
 import 'package:journal_app/providers/theme_provider.dart';
+
+final navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,6 +31,8 @@ void main() async {
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => JournalProvider()),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider(create: (_) => BlockedUsersProvider()),
+        ChangeNotifierProvider(create: (_) => FollowProvider()),
       ],
       child: const MyApp(),
     ),
@@ -45,6 +51,7 @@ class MyApp extends StatelessWidget {
       themeMode: themeProvider.themeMode,
       theme: themeProvider.themeData,
       darkTheme: themeProvider.themeData,
+      navigatorKey: navigatorKey,
       home: const SplashScreen(),
     );
   }

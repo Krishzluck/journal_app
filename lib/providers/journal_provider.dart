@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:provider/provider.dart';
+import 'package:journal_app/providers/blocked_users_provider.dart';
 
 final Map<String, Color> moodColors = {
   'Happy': Colors.green,
@@ -76,26 +78,43 @@ class Comment {
 class JournalProvider extends ChangeNotifier {
   List<JournalEntry> _globalEntries = [];
   List<JournalEntry> _userEntries = [];
+  List<JournalEntry> _savedEntries = [];  // New list for saved entries
+  List<JournalEntry> _followingEntries = [];
+  List<JournalEntry> _followerEntries = [];
   bool _isLoading = false;
 
   bool get isLoading => _isLoading;
 
   List<JournalEntry> get globalEntries => _globalEntries;
   List<JournalEntry> get userEntries => _userEntries;
+  List<JournalEntry> get savedEntries => _savedEntries;
+  List<JournalEntry> get followingEntries => _followingEntries;
+  List<JournalEntry> get followerEntries => _followerEntries;
 
-  Future<void> loadGlobalEntries() async {
+  Future<void> loadGlobalEntries(List<BlockedUser> blockedUsers) async {
     try {
+      _isLoading = true;
+      notifyListeners();
+
+      final blockedUserIds = blockedUsers.map((u) => u.id).toList();
+
       final response = await Supabase.instance.client
           .from('journal_entries')
           .select()
           .eq('is_public', true)
+          .not('user_id', 'in', blockedUserIds)
           .order('created_at', ascending: false);
 
       _globalEntries = (response as List<dynamic>)
           .map((entry) => JournalEntry.fromJson(entry))
           .toList();
       notifyListeners();
+
+      _isLoading = false;
+      notifyListeners();
     } catch (e) {
+      _isLoading = false;
+      notifyListeners();
       print('Error loading global entries: $e');
     }
   }
@@ -242,7 +261,7 @@ class JournalProvider extends ChangeNotifier {
           )
         ''')
           .eq('journal_entry_id', entryId)
-          .order('created_at', ascending: true);
+          .order('created_at', ascending: false);
 
       return (response as List<dynamic>).map((commentData) {
         final profiles = commentData['profiles'] as Map<String, dynamic>;
@@ -257,19 +276,132 @@ class JournalProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> addComment(String entryId, String content) async {
+  Future<Comment> addComment(String entryId, String content) async {
     final user = Supabase.instance.client.auth.currentUser;
-    if (user == null) return;
+    if (user == null) return Comment.fromJson({});
 
     try {
-      await Supabase.instance.client.from('comments').insert({
+      final response = await Supabase.instance.client.from('comments').insert({
         'journal_entry_id': entryId,
         'content': content,
         'user_id': user.id,
-      });
+      }).select();
+
+      return Comment.fromJson(response[0]);
     } catch (e) {
       print('Error adding comment: $e');
+      return Comment.fromJson({});
     }
+  }
+
+  Future<void> deleteComment(String commentId) async {
+    try {
+      await Supabase.instance.client
+          .from('comments')
+          .delete()
+          .eq('id', commentId);
+    } catch (e) {
+      print('Error deleting comment: $e');
+      rethrow;
+    }
+  }
+
+  // Add method to save/unsave journal
+  Future<void> toggleSaveJournal(JournalEntry entry) async {
+    try {
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user == null) return;
+
+      final isSaved = _savedEntries.any((e) => e.id == entry.id);
+      
+      if (isSaved) {
+        // Remove from saved
+        await Supabase.instance.client
+            .from('saved_journals')
+            .delete()
+            .match({
+              'user_id': user.id,
+              'journal_id': entry.id,
+            });
+        _savedEntries.removeWhere((e) => e.id == entry.id);
+      } else {
+        // Add to saved
+        await Supabase.instance.client
+            .from('saved_journals')
+            .insert({
+              'user_id': user.id,
+              'journal_id': entry.id,
+            });
+        _savedEntries.add(entry);
+      }
+      notifyListeners();
+    } catch (e) {
+      print('Error toggling save journal: $e');
+    }
+  }
+
+  // Load saved journals
+  Future<void> loadSavedJournals() async {
+    try {
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user == null) return;
+
+      final response = await Supabase.instance.client
+          .from('saved_journals')
+          .select('''
+            journal_id,
+            journal_entries!inner (*)
+          ''')
+          .eq('user_id', user.id);
+
+      _savedEntries = (response as List<dynamic>)
+          .map((data) => JournalEntry.fromJson(data['journal_entries']))
+          .toList();
+      notifyListeners();
+    } catch (e) {
+      print('Error loading saved journals: $e');
+    }
+  }
+
+  Future<void> loadFollowingEntries(String userId, List<String> followingIds) async {
+    try {
+      final data = await Supabase.instance.client
+          .from('journal_entries')
+          .select()
+          .eq('is_public', true)
+          .inFilter('user_id', followingIds)
+          .order('created_at', ascending: false);
+
+      _followingEntries = data.map((item) => JournalEntry.fromJson(item)).toList();
+      notifyListeners();
+    } catch (e) {
+      print('Error loading following entries: $e');
+    }
+  }
+
+  Future<void> loadFollowerEntries(String userId, List<String> followerIds) async {
+    try {
+      final data = await Supabase.instance.client
+          .from('journal_entries')
+          .select()
+          .eq('is_public', true)
+          .inFilter('user_id', followerIds)
+          .order('created_at', ascending: false);
+
+      _followerEntries = data.map((item) => JournalEntry.fromJson(item)).toList();
+      notifyListeners();
+    } catch (e) {
+      print('Error loading follower entries: $e');
+    }
+  }
+
+  void clearData() {
+    _globalEntries = [];
+    _userEntries = [];
+    _savedEntries = [];
+    _followingEntries = [];
+    _followerEntries = [];
+    notifyListeners();
   }
 }
 

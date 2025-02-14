@@ -61,9 +61,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
                   children: [
                     UserAvatar(
                       imageUrl: _imageFile != null 
-                          ? null  // Don't show network image if local file is selected
+                          ? _imageFile!.path  // Show picked image
                           : authProvider.userProfile?.avatarUrl,
                       radius: 50,
+                      isLocalImage: _imageFile != null,  // Add this flag
                     ),
                     Positioned(
                       bottom: 0,

@@ -68,6 +68,8 @@ class ThemeProvider with ChangeNotifier {
       foregroundColor: Colors.black,
       elevation: 0,
       iconTheme: IconThemeData(color: Colors.black),
+      scrolledUnderElevation: 0,
+      centerTitle: true,
     ),
     brightness: Brightness.light,
     colorScheme: const ColorScheme.light(
@@ -97,6 +99,8 @@ class ThemeProvider with ChangeNotifier {
       foregroundColor: Colors.white,
       elevation: 0,
       iconTheme: IconThemeData(color: Colors.white),
+      scrolledUnderElevation: 0,
+      centerTitle: true,
     ),
     brightness: Brightness.dark,
     colorScheme: const ColorScheme.dark(
