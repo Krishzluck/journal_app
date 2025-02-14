@@ -18113,6 +18113,1468 @@ _**Assistant**_
 
 
 
+
+
+Let's update the save button icon in JournalEntryPage:
+
+```dart:lib/screens/journal_entry_page.dart
+      appBar: AppBar(
+        title: Text(widget.entry == null ? 'New Journal' : 'Edit Journal'),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: CustomButton(
+              text: 'Save',
+              onPressed: _saveEntry,
+              isLoading: Provider.of<JournalProvider>(context).isLoading,
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              icon: Icons.save,  // Changed from send to save icon
+              expandWidth: false,
+            ),
+          ),
+        ],
+      ),
+```
+
+This changes the icon from send to save while keeping all other functionality the same.
+
+---
+
+_**User**_
+
+Now I want to add notification in this app for user interaction for comment new global post like that so which service should i have to use which will connect with supabse and send notification from there
+dont change any code just give me answers
+
+---
+
+_**Assistant**_
+
+For adding notifications to your app with Supabase, here are the recommended approaches:
+
+1. **Supabase Edge Functions + Firebase Cloud Messaging (FCM)**:
+- Use Supabase Edge Functions to trigger notifications
+- FCM for delivering notifications to devices
+- Store device tokens in a Supabase table
+- Create database triggers to call Edge Functions when events happen
+
+2. **Supabase Realtime + Local Notifications**:
+- Use Supabase Realtime to listen for changes
+- Flutter Local Notifications for in-app notifications
+- Good for when app is open
+- Limited when app is closed
+
+3. **Third-party Services**:
+- OneSignal (most popular, easy integration)
+- Pusher
+- Novu
+- These services can integrate with Supabase via webhooks
+
+Recommended Setup:
+1. FCM for push notifications
+2. Supabase Edge Functions for triggers
+3. New table structure:
+```sql
+create table device_tokens (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid references auth.users not null,
+  device_token text not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+create table notifications (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid references auth.users not null,
+  title text not null,
+  body text not null,
+  type text not null,
+  reference_id text,
+  is_read boolean default false,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+```
+
+This gives you a robust notification system that works both in and out of the app.
+
+---
+
+_**User**_
+
+Okay the i'll use Supabase Edge Functions + Firebase Cloud Messaging (FCM) option now how to implement that in this app with below circumstances :-
+- if a user comment on current logged in user post then current user should get notification of that @user commented on your post and on click of that notification user should navigate to that post.
+
+- if current users following and follower user post any global journal then current user should get notification of that @user created new journal and on click of that notification user should navigate to that users post.
+
+- if any user follows current logged in user then current user should get notification like @user followed you and on click of that notification user should navigate to that users profile.
+
+- on months end date all users should get notification like check month mood and on click of that notification it should navigate to month mood screen. (it can also be done by local notification but if it can be done with backend then its up to you set any option as per app functionality).
+
+add all functionlity through fcm and supabase and give me all steps how to do that.
+
+
+
+
+---
+
+_**Assistant**_
+
+Here's a step-by-step guide to implement FCM notifications with Supabase for your app:
+
+1. First, set up Firebase and FCM:
+```yaml:pubspec.yaml
+dependencies:
+  firebase_core: ^latest_version
+  firebase_messaging: ^latest_version
+```
+
+2. Create a new table in Supabase for device tokens:
+```sql
+create table device_tokens (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid references auth.users not null,
+  device_token text not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  unique(user_id, device_token)
+);
+
+create table notifications (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid references auth.users not null,
+  title text not null,
+  body text not null,
+  type text not null,
+  reference_id text,
+  is_read boolean default false,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+```
+
+3. Create a NotificationService:
+```dart:lib/services/notification_service.dart
+class NotificationService {
+  final FirebaseMessaging _fcm = FirebaseMessaging.instance;
+  final _supabase = Supabase.instance.client;
+
+  Future<void> initialize() async {
+    // Request permission
+    await _fcm.requestPermission();
+    
+    // Get FCM token
+    String? token = await _fcm.getToken();
+    if (token != null) {
+      await saveDeviceToken(token);
+    }
+
+    // Listen for token refresh
+    _fcm.onTokenRefresh.listen(saveDeviceToken);
+
+    // Handle notifications when app is in background
+    FirebaseMessaging.onMessageOpenedApp.listen(handleNotification);
+    
+    // Handle notifications when app is terminated
+    final initialMessage = await _fcm.getInitialMessage();
+    if (initialMessage != null) {
+      handleNotification(initialMessage);
+    }
+
+    // Handle foreground notifications
+    FirebaseMessaging.onMessage.listen((message) {
+      // Show local notification when app is in foreground
+      showLocalNotification(message);
+    });
+  }
+
+  Future<void> saveDeviceToken(String token) async {
+    final userId = _supabase.auth.currentUser?.id;
+    if (userId == null) return;
+
+    await _supabase.from('device_tokens').upsert({
+      'user_id': userId,
+      'device_token': token,
+    });
+  }
+
+  void handleNotification(RemoteMessage message) {
+    final data = message.data;
+    final type = data['type'];
+    final referenceId = data['reference_id'];
+
+    switch (type) {
+      case 'comment':
+        navigateToPost(referenceId);
+        break;
+      case 'new_journal':
+        navigateToPost(referenceId);
+        break;
+      case 'follow':
+        navigateToUserProfile(referenceId);
+        break;
+      case 'month_mood':
+        navigateToMonthMood();
+        break;
+    }
+  }
+}
+```
+
+4. Create Supabase Edge Functions for each notification type:
+
+```typescript:supabase/functions/send-notification/index.ts
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { createClient } from '@supabase/supabase-js'
+
+const FIREBASE_SERVER_KEY = Deno.env.get('FIREBASE_SERVER_KEY')
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+
+async function sendFCM(tokens: string[], title: string, body: string, data: any) {
+  const response = await fetch('https://fcm.googleapis.com/fcm/send', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `key=${FIREBASE_SERVER_KEY}`,
+    },
+    body: JSON.stringify({
+      registration_ids: tokens,
+      notification: { title, body },
+      data,
+    }),
+  })
+  return response.json()
+}
+
+serve(async (req) => {
+  const { type, userId, referenceId, actorName } = await req.json()
+
+  // Get user's device tokens
+  const { data: tokens } = await supabase
+    .from('device_tokens')
+    .select('device_token')
+    .eq('user_id', userId)
+
+  const deviceTokens = tokens.map(t => t.device_token)
+
+  let title, body, data
+
+  switch (type) {
+    case 'comment':
+      title = 'New Comment'
+      body = `@${actorName} commented on your post`
+      data = { type, reference_id: referenceId }
+      break
+    case 'new_journal':
+      title = 'New Journal'
+      body = `@${actorName} created a new journal`
+      data = { type, reference_id: referenceId }
+      break
+    case 'follow':
+      title = 'New Follower'
+      body = `@${actorName} followed you`
+      data = { type, reference_id: referenceId }
+      break
+    case 'month_mood':
+      title = 'Monthly Mood Check'
+      body = 'Check your mood summary for this month!'
+      data = { type }
+      break
+  }
+
+  const result = await sendFCM(deviceTokens, title, body, data)
+  return new Response(JSON.stringify(result), { headers: { 'Content-Type': 'application/json' } })
+})
+```
+
+5. Create Database Triggers in Supabase:
+
+```sql
+-- For comments
+create function notify_comment() returns trigger as $$
+begin
+  select net.http_post(
+    'https://your-project.functions.supabase.co/send-notification',
+    jsonb_build_object(
+      'type', 'comment',
+      'userId', (select user_id from journal_entries where id = NEW.journal_entry_id),
+      'referenceId', NEW.journal_entry_id,
+      'actorName', (select username from profiles where id = NEW.user_id)
+    )
+  );
+  return NEW;
+end;
+$$ language plpgsql;
+
+create trigger on_comment_created
+  after insert on comments
+  for each row
+  execute function notify_comment();
+
+-- For follows
+create function notify_follow() returns trigger as $$
+begin
+  select net.http_post(
+    'https://your-project.functions.supabase.co/send-notification',
+    jsonb_build_object(
+      'type', 'follow',
+      'userId', NEW.following_id,
+      'referenceId', NEW.follower_id,
+      'actorName', (select username from profiles where id = NEW.follower_id)
+    )
+  );
+  return NEW;
+end;
+$$ language plpgsql;
+
+create trigger on_follow_created
+  after insert on follows
+  for each row
+  execute function notify_follow();
+
+-- For new journals
+create function notify_new_journal() returns trigger as $$
+begin
+  if NEW.is_public then
+    select net.http_post(
+      'https://your-project.functions.supabase.co/send-notification',
+      jsonb_build_object(
+        'type', 'new_journal',
+        'userId', follower_id,
+        'referenceId', NEW.id,
+        'actorName', (select username from profiles where id = NEW.user_id)
+      )
+    )
+    from follows
+    where following_id = NEW.user_id;
+  end if;
+  return NEW;
+end;
+$$ language plpgsql;
+
+create trigger on_journal_created
+  after insert on journal_entries
+  for each row
+  execute function notify_new_journal();
+```
+
+6. Initialize NotificationService in your app:
+
+```dart:lib/main.dart
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+  
+  final notificationService = NotificationService();
+  await notificationService.initialize();
+  
+  runApp(MyApp());
+}
+```
+
+7. For monthly notifications, create a scheduled function in Supabase:
+
+```sql
+create extension if not exists pg_cron;
+
+select cron.schedule(
+  'monthly-mood-check',
+  '0 0 1 * *',  -- Run at midnight on the first day of every month
+  $$
+  select net.http_post(
+    'https://your-project.functions.supabase.co/send-notification',
+    jsonb_build_object(
+      'type', 'month_mood',
+      'userId', id,
+      'actorName', username
+    )
+  )
+  from profiles;
+  $$
+);
+```
+
+This setup will:
+- Send notifications for comments, follows, and new journals
+- Handle navigation when notifications are tapped
+- Store notification history
+- Send monthly mood check reminders
+- Work when app is in foreground, background, or terminated state
+
+Remember to:
+1. Configure Firebase in your project
+2. Add FCM server key to Supabase secrets
+3. Enable Edge Functions in Supabase
+4. Test notifications in different app states
+5. Handle error cases and token refreshes
+
+---
+
+_**User**_
+
+where to get this url?
+@https://your-project.functions.supabase.co/send-notification 
+
+---
+
+_**Assistant**_
+
+The URL for your Supabase Edge Function will be in this format:
+`https://<project-ref>.supabase.co/functions/v1/send-notification`
+
+To get your specific URL:
+
+1. Go to your Supabase Dashboard
+2. Select your project
+3. Go to Edge Functions section in the left sidebar
+4. Deploy your function (the send-notification function)
+5. After deployment, you'll see the function URL
+
+The URL will look something like:
+`https://fpwokldgmdwikejniuxz.supabase.co/functions/v1/send-notification`
+
+Replace the URL in your database triggers with your actual function URL:
+
+```sql
+create function notify_comment() returns trigger as $$
+begin
+  select net.http_post(
+    'https://fpwokldgmdwikejniuxz.supabase.co/functions/v1/send-notification',  -- Your actual URL here
+    jsonb_build_object(
+      'type', 'comment',
+      'userId', (select user_id from journal_entries where id = NEW.journal_entry_id),
+      'referenceId', NEW.journal_entry_id,
+      'actorName', (select username from profiles where id = NEW.user_id)
+    )
+  );
+  return NEW;
+end;
+$$ language plpgsql;
+```
+
+Make sure to:
+1. Deploy the Edge Function first
+2. Use your project's specific URL
+3. Test the function endpoint is accessible
+4. Update all trigger functions with the correct URL
+
+---
+
+_**User**_
+
+Explain me "Create Supabase Edge Functions for each notification type:" and also give information about where to get firebase key and also explain full code
+
+---
+
+_**Assistant**_
+
+Let me break down the entire notification setup:
+
+1. **Firebase Setup**:
+```markdown
+1. Go to Firebase Console (console.firebase.google.com)
+2. Create a new project
+3. Add your app (Android/iOS)
+4. Download google-services.json (Android) or GoogleService-Info.plist (iOS)
+5. Get Firebase Server Key:
+   - Go to Project Settings
+   - Go to Cloud Messaging
+   - Copy the "Server key"
+```
+
+2. **Supabase Edge Function Setup**:
+```markdown
+1. Create new function in Supabase:
+   ```bash
+   supabase functions new send-notification
+   ```
+
+2. Deploy function:
+   ```bash
+   supabase functions deploy send-notification
+   ```
+
+3. Add secrets in Supabase dashboard:
+   - Go to Project Settings > API
+   - Add secrets:
+     FIREBASE_SERVER_KEY=your_firebase_server_key
+     SUPABASE_URL=your_project_url
+     SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+```
+
+3. **Edge Function Code Explanation**:
+```typescript
+// supabase/functions/send-notification/index.ts
+
+// Import required Deno modules
+import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
+import { createClient } from '@supabase/supabase-js'
+
+// Get environment variables
+const FIREBASE_SERVER_KEY = Deno.env.get('FIREBASE_SERVER_KEY')
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+
+// Initialize Supabase client
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+
+// Function to send FCM notification
+async function sendFCM(tokens: string[], title: string, body: string, data: any) {
+  const response = await fetch('https://fcm.googleapis.com/fcm/send', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `key=${FIREBASE_SERVER_KEY}`,
+    },
+    body: JSON.stringify({
+      registration_ids: tokens,  // Multiple device tokens
+      notification: { title, body },  // Notification content
+      data,  // Additional data for handling clicks
+    }),
+  })
+  return response.json()
+}
+
+// Main function handler
+serve(async (req) => {
+  const { type, userId, referenceId, actorName } = await req.json()
+
+  // Get user's device tokens from Supabase
+  const { data: tokens } = await supabase
+    .from('device_tokens')
+    .select('device_token')
+    .eq('user_id', userId)
+
+  const deviceTokens = tokens.map(t => t.device_token)
+
+  // Prepare notification content based on type
+  let title, body, data
+  switch (type) {
+    case 'comment':
+      title = 'New Comment'
+      body = `@${actorName} commented on your post`
+      data = { type, reference_id: referenceId }
+      break
+    case 'new_journal':
+      title = 'New Journal'
+      body = `@${actorName} created a new journal`
+      data = { type, reference_id: referenceId }
+      break
+    case 'follow':
+      title = 'New Follower'
+      body = `@${actorName} followed you`
+      data = { type, reference_id: referenceId }
+      break
+    case 'month_mood':
+      title = 'Monthly Mood Check'
+      body = 'Check your mood summary for this month!'
+      data = { type }
+      break
+  }
+
+  // Send notification
+  const result = await sendFCM(deviceTokens, title, body, data)
+  return new Response(JSON.stringify(result))
+})
+```
+
+4. **Database Tables**:
+```sql
+-- Create tables for notifications
+create table device_tokens (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid references auth.users not null,
+  device_token text not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  unique(user_id, device_token)
+);
+
+create table notifications (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid references auth.users not null,
+  title text not null,
+  body text not null,
+  type text not null,
+  reference_id text,
+  is_read boolean default false,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+```
+
+5. **Database Triggers**:
+```sql
+-- Trigger for comments
+create function notify_comment() returns trigger as $$
+begin
+  select net.http_post(
+    'https://your-project.functions.supabase.co/functions/v1/send-notification',
+    jsonb_build_object(
+      'type', 'comment',
+      'userId', (select user_id from journal_entries where id = NEW.journal_entry_id),
+      'referenceId', NEW.journal_entry_id,
+      'actorName', (select username from profiles where id = NEW.user_id)
+    )
+  );
+  return NEW;
+end;
+$$ language plpgsql;
+
+create trigger on_comment_created
+  after insert on comments
+  for each row
+  execute function notify_comment();
+
+-- Similar triggers for follows and new journals
+```
+
+6. **Flutter App Integration**:
+```dart
+// lib/services/notification_service.dart
+class NotificationService {
+  final FirebaseMessaging _fcm = FirebaseMessaging.instance;
+  final _supabase = Supabase.instance.client;
+
+  Future<void> initialize() async {
+    // Request permission and get token
+    await _fcm.requestPermission();
+    String? token = await _fcm.getToken();
+    if (token != null) {
+      await saveDeviceToken(token);
+    }
+
+    // Handle different notification states
+    FirebaseMessaging.onMessageOpenedApp.listen(handleNotification);
+    FirebaseMessaging.onMessage.listen(showLocalNotification);
+    
+    final initialMessage = await _fcm.getInitialMessage();
+    if (initialMessage != null) {
+      handleNotification(initialMessage);
+    }
+  }
+
+  // Navigation methods based on notification type
+  void navigateToPost(String postId) {
+    // Navigate to specific post
+  }
+
+  void navigateToUserProfile(String userId) {
+    // Navigate to user profile
+  }
+
+  void navigateToMonthMood() {
+    // Navigate to month mood screen
+  }
+}
+```
+
+To implement this:
+1. Set up Firebase project
+2. Create and deploy Supabase Edge Function
+3. Add database tables and triggers
+4. Implement Flutter notification service
+5. Test notifications in different states (foreground/background/terminated)
+
+Remember to:
+- Handle errors gracefully
+- Test all notification types
+- Implement proper navigation
+- Handle token refreshes
+- Consider rate limiting
+- Add proper error logging
+
+---
+
+_**User**_
+
+If you are an existing user of the legacy HTTP or XMPP APIs (deprecated on 20/6/2023), you must migrate to the latest Firebase Cloud Messaging API (HTTP v1) by 20/6/2024.
+
+this shows when trying to get service key from firebase
+
+---
+
+_**Assistant**_
+
+Ah, for the new Firebase Cloud Messaging HTTP v1 API, we need to update our approach. Here's how to set it up with the latest version:
+
+1. **Get Firebase Admin SDK credentials**:
+```markdown
+1. Go to Firebase Console > Project Settings
+2. Go to Service Accounts tab
+3. Click "Generate New Private Key"
+4. This will download a JSON file with credentials
+```
+
+2. **Update the Edge Function**:
+```typescript:supabase/functions/send-notification/index.ts
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+
+const GOOGLE_APPLICATION_CREDENTIALS = Deno.env.get('GOOGLE_APPLICATION_CREDENTIALS')
+const PROJECT_ID = Deno.env.get('FIREBASE_PROJECT_ID')
+
+async function getAccessToken() {
+  const credentials = JSON.parse(GOOGLE_APPLICATION_CREDENTIALS!)
+  const jwt = await createJWT(credentials)
+  const response = await fetch(
+    'https://oauth2.googleapis.com/token',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+        assertion: jwt,
+      }),
+    }
+  )
+  const { access_token } = await response.json()
+  return access_token
+}
+
+async function sendFCM(tokens: string[], title: string, body: string, data: any) {
+  const accessToken = await getAccessToken()
+  
+  const message = {
+    message: {
+      token: tokens[0], // Send to single device
+      notification: {
+        title,
+        body,
+      },
+      data,
+    },
+  }
+
+  const response = await fetch(
+    `https://fcm.googleapis.com/v1/projects/${PROJECT_ID}/messages:send`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(message),
+    }
+  )
+  return response.json()
+}
+
+serve(async (req) => {
+  // ... rest of the code remains same
+})
+```
+
+3. **Update Supabase secrets**:
+```bash
+supabase secrets set GOOGLE_APPLICATION_CREDENTIALS='{"type":"service_account",...}'
+supabase secrets set FIREBASE_PROJECT_ID='your-project-id'
+```
+
+4. **Update Android configuration**:
+```xml:android/app/src/main/AndroidManifest.xml
+<manifest>
+    <application>
+        <!-- Add this inside application tag -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="high_importance_channel" />
+    </application>
+</manifest>
+```
+
+5. **Update NotificationService**:
+```dart:lib/services/notification_service.dart
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter/material.dart';
+
+class NotificationService {
+  final FirebaseMessaging _fcm = FirebaseMessaging.instance;
+  final _supabase = Supabase.instance.client;
+  final FlutterLocalNotificationsPlugin _flutterLocalNotificationsPlugin = 
+      FlutterLocalNotificationsPlugin();
+
+  Future<void> initialize() async {
+    // Request permission
+    await _fcm.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+
+    // Initialize local notifications
+    await _initializeLocalNotifications();
+    
+    // Get FCM token
+    String? token = await _fcm.getToken();
+    if (token != null) {
+      await saveDeviceToken(token);
+    }
+
+    // Listen for token refresh
+    _fcm.onTokenRefresh.listen(saveDeviceToken);
+
+    // Handle background messages
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+    
+    // Handle foreground messages
+    FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
+    
+    // Handle notification taps
+    FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
+  }
+
+  Future<void> _initializeLocalNotifications() async {
+    const AndroidInitializationSettings initializationSettingsAndroid =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+        
+    final DarwinInitializationSettings initializationSettingsIOS =
+        DarwinInitializationSettings(
+      requestSoundPermission: false,
+      requestBadgePermission: false,
+      requestAlertPermission: false,
+    );
+
+    final InitializationSettings initializationSettings = InitializationSettings(
+      android: initializationSettingsAndroid,
+      iOS: initializationSettingsIOS,
+    );
+
+    await _flutterLocalNotificationsPlugin.initialize(
+      initializationSettings,
+      onDidReceiveNotificationResponse: (details) {
+        _handleNotificationTap(null, payload: details.payload);
+      },
+    );
+  }
+
+  Future<void> _handleForegroundMessage(RemoteMessage message) async {
+    // Show local notification when app is in foreground
+    await _flutterLocalNotificationsPlugin.show(
+      message.hashCode,
+      message.notification?.title,
+      message.notification?.body,
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          'high_importance_channel',
+          'High Importance Notifications',
+          importance: Importance.high,
+          priority: Priority.high,
+        ),
+      ),
+      payload: message.data.toString(),
+    );
+  }
+
+  void _handleNotificationTap(RemoteMessage? message, {String? payload}) {
+    // Handle navigation based on notification type
+    final data = message?.data ?? {};
+    final type = data['type'];
+    final referenceId = data['reference_id'];
+
+    switch (type) {
+      case 'comment':
+        navigateToPost(referenceId);
+        break;
+      case 'new_journal':
+        navigateToPost(referenceId);
+        break;
+      case 'follow':
+        navigateToUserProfile(referenceId);
+        break;
+      case 'month_mood':
+        navigateToMonthMood();
+        break;
+    }
+  }
+
+  // ... rest of your methods
+}
+```
+
+6. **Add flutter_local_notifications package**:
+```yaml:pubspec.yaml
+dependencies:
+  flutter_local_notifications: ^latest_version
+```
+
+This updated implementation:
+- Uses FCM HTTP v1 API
+- Handles notifications properly in all states
+- Shows local notifications when app is in foreground
+- Uses proper authentication with Firebase
+- Follows best practices for notification channels
+
+Remember to:
+1. Update your Firebase dependencies
+2. Test thoroughly in all app states
+3. Handle notification permissions properly
+4. Test on both Android and iOS
+
+---
+
+_**User**_
+
+i have this error in notification service page
+
+Undefined name '_firebaseMessagingBackgroundHandler'.
+Try correcting the name to one that is defined, or defining the name.
+
+
+
+---
+
+_**Assistant**_
+
+
+
+
+
+
+
+We need to add the background message handler function. This function needs to be defined at the top level (outside any class) because it needs to be available when the app is in the background:
+
+```dart:lib/services/notification_service.dart
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter/material.dart';
+
+// This needs to be outside the class as a top-level function
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  // Handle background messages here
+  print("Handling a background message: ${message.messageId}");
+}
+
+class NotificationService {
+  final FirebaseMessaging _fcm = FirebaseMessaging.instance;
+  final _supabase = Supabase.instance.client;
+  final FlutterLocalNotificationsPlugin _flutterLocalNotificationsPlugin = 
+      FlutterLocalNotificationsPlugin();
+
+  Future<void> initialize() async {
+    // Request permission
+    await _fcm.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+
+    // Initialize local notifications
+    await _initializeLocalNotifications();
+    
+    // Get FCM token
+    String? token = await _fcm.getToken();
+    if (token != null) {
+      await saveDeviceToken(token);
+    }
+
+    // Listen for token refresh
+    _fcm.onTokenRefresh.listen(saveDeviceToken);
+
+    // Set the background message handler
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+    
+    // Handle foreground messages
+    FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
+    
+    // Handle notification taps
+    FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
+  }
+
+  // ... rest of the class implementation remains the same
+}
+```
+
+Key changes:
+1. Added top-level background message handler function
+2. Added @pragma annotation to ensure the function is preserved
+3. Function must be defined outside the class
+4. Added basic logging for background messages
+
+The @pragma('vm:entry-point') annotation is important because it tells the Dart compiler to preserve this function even when the app is compiled in release mode.
+
+---
+
+_**User**_
+
+in notification service navigateToPost, navigateToUserProfile, navigateToMonthMood function are not found create functions of it
+
+---
+
+_**Assistant**_
+
+
+
+
+
+
+
+Let's add the navigation functions to the NotificationService class. We'll need to use the global navigator key to handle navigation from anywhere:
+
+```dart:lib/services/notification_service.dart
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter/material.dart';
+import 'package:journal_app/main.dart';  // For navigatorKey
+import 'package:journal_app/screens/journal_details_page.dart';
+import 'package:journal_app/screens/user_profile_page.dart';
+import 'package:journal_app/screens/month_mood_screen.dart';
+import 'package:journal_app/providers/journal_provider.dart';
+import 'package:provider/provider.dart';
+
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  print("Handling a background message: ${message.messageId}");
+}
+
+class NotificationService {
+  // ... existing code ...
+
+  void navigateToPost(String postId) async {
+    // Get the journal entry
+    final journalProvider = Provider.of<JournalProvider>(
+      navigatorKey.currentContext!,
+      listen: false
+    );
+    
+    final entry = await journalProvider.getJournalEntry(postId);
+    if (entry != null) {
+      navigatorKey.currentState?.push(
+        MaterialPageRoute(
+          builder: (context) => JournalDetailsPage(entry: entry),
+        ),
+      );
+    }
+  }
+
+  void navigateToUserProfile(String userId) {
+    navigatorKey.currentState?.push(
+      MaterialPageRoute(
+        builder: (context) => UserProfilePage(userId: userId),
+      ),
+    );
+  }
+
+  void navigateToMonthMood() {
+    navigatorKey.currentState?.push(
+      MaterialPageRoute(
+        builder: (context) => MonthMoodScreen(),
+      ),
+    );
+  }
+
+  // ... rest of existing code ...
+}
+```
+
+Key changes:
+1. Added necessary imports
+2. Added navigation functions using global navigatorKey
+3. Added journal entry fetching before navigation
+4. Used MaterialPageRoute for proper transitions
+5. Added null safety checks
+
+Make sure you have the global navigatorKey in your main.dart file (which you already do).
+
+These functions will:
+- Navigate to specific journal post when notification is about comments
+- Navigate to user profile when notification is about follows
+- Navigate to month mood screen for monthly reminders
+- Handle navigation from any app state
+
+---
+
+_**User**_
+
+For the code present, we get this error:
+```
+The method 'getJournalEntry' isn't defined for the type 'JournalProvider'.
+Try correcting the name to the name of an existing method, or defining a method named 'getJournalEntry'.
+```
+How can I resolve this? If you propose a fix, please make it concise.
+
+---
+
+_**Assistant**_
+
+
+
+
+
+
+
+
+Let's add the `getJournalEntry` method to the JournalProvider:
+
+```dart:lib/providers/journal_provider.dart
+class JournalProvider extends ChangeNotifier {
+  // ... existing code ...
+
+  Future<JournalEntry?> getJournalEntry(String entryId) async {
+    try {
+      final response = await _supabase
+          .from('journal_entries')
+          .select()
+          .eq('id', entryId)
+          .single();
+      
+      return JournalEntry.fromJson(response);
+    } catch (e) {
+      print('Error getting journal entry: $e');
+      return null;
+    }
+  }
+}
+```
+
+This method fetches a single journal entry by its ID from Supabase.
+
+---
+
+_**User**_
+
+initialize notification service in home screen instead of main.dart
+
+and PostgrestException (PostgrestException(message: duplicate key value violates unique constraint "device_tokens_user_id_device_token_key", code: 23505, details: Key (user_id, device_token)=(bebcbe4a-cabc-4c74-b249-a9d2d1eff7ea, d9zNeDpjSUKCXpPreRu_hs:APA91bEDwpwDfPUSikac23EM4hJ2u43emJJd5rT0n94yngf7BzHCbjwJHpeWsaEswLwF0H7rwp0XD4g1t9UtpZGZbmHgZwgGj87fdDzsnsX8_d5mo-g0JBQ) already exists., hint: null))
+
+---
+
+_**Assistant**_
+
+
+
+Let's make these changes:
+
+1. First, move notification initialization to HomePage:
+
+```dart:lib/screens/home_page.dart
+class _HomePageState extends State<HomePage> {
+  @override
+  void initState() {
+    super.initState();
+    _initializeNotifications();
+  }
+
+  Future<void> _initializeNotifications() async {
+    final notificationService = NotificationService();
+    await notificationService.initialize();
+  }
+
+  // ... rest of the code
+}
+```
+
+2. Update main.dart to remove notification initialization:
+
+```dart:lib/main.dart
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  await Supabase.initialize(
+    url: 'https://fpwokldgmdwikejniuxz.supabase.co',
+    anonKey: '...',
+  );
+  
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
+  await SharedPreferences.getInstance();
+
+  runApp(
+    MultiProvider(
+      // ... existing providers
+    ),
+  );
+}
+```
+
+3. Update saveDeviceToken in NotificationService to handle duplicates:
+
+```dart:lib/services/notification_service.dart
+Future<void> saveDeviceToken(String token) async {
+  final userId = _supabase.auth.currentUser?.id;
+  if (userId == null) return;
+
+  try {
+    // First try to delete any existing token for this user
+    await _supabase
+      .from('device_tokens')
+      .delete()
+      .match({
+        'user_id': userId,
+        'device_token': token,
+      });
+
+    // Then insert the new token
+    await _supabase.from('device_tokens').insert({
+      'user_id': userId,
+      'device_token': token,
+    });
+  } catch (e) {
+    print('Error saving device token: $e');
+  }
+}
+```
+
+This will:
+1. Move notification initialization to after user is logged in
+2. Prevent duplicate token errors
+3. Keep Firebase initialization in main.dart since it's needed early
+
+---
+
+_**User**_
+
+I/flutter ( 8890): Error adding comment: PostgrestException(message: schema "net" does not exist, code: 3F000, details: Bad Request, hint: null)
+I/flutter ( 8890): Error adding comment: type 'Null' is not a subtype of type 'String'
+
+---
+
+_**Assistant**_
+
+
+
+The error occurs because we need to update the database trigger for comments. The `net.http_post` function isn't available. Let's update the database triggers:
+
+```sql
+-- First create an http extension if not exists
+create extension if not exists http with schema extensions;
+
+-- Then update the comment trigger
+create or replace function notify_comment() returns trigger as $$
+begin
+  perform
+    extensions.http_post(
+      'https://fpwokldgmdwikejniuxz.supabase.co/functions/v1/send-notification',
+      jsonb_build_object(
+        'type', 'comment',
+        'userId', (select user_id from journal_entries where id = NEW.journal_entry_id),
+        'referenceId', NEW.journal_entry_id,
+        'actorName', (select username from profiles where id = NEW.user_id)
+      )::text,
+      'application/json'
+    );
+  return NEW;
+end;
+$$ language plpgsql;
+
+-- Make sure trigger exists
+drop trigger if exists on_comment_created on comments;
+create trigger on_comment_created
+  after insert on comments
+  for each row
+  execute function notify_comment();
+```
+
+Key changes:
+1. Use `extensions.http_post` instead of `net.http_post`
+2. Add proper content-type header
+3. Convert payload to text
+4. Create http extension first
+
+Run these SQL commands in your Supabase SQL editor to fix the trigger.
+
+---
+
+_**User**_
+
+i have added query like this
+
+-- For comments
+create function notify_comment() returns trigger as $$
+begin
+  select net.http_post(
+    'https://fpwokldgmdwikejniuxz.supabase.co/functions/v1/send-notification',
+    jsonb_build_object(
+      'type', 'comment',
+      'userId', (select user_id from journal_entries where id = NEW.journal_entry_id),
+      'referenceId', NEW.journal_entry_id,
+      'actorName', (select username from profiles where id = NEW.user_id)
+    )
+  );
+  return NEW;
+end;
+$$ language plpgsql;
+
+create trigger on_comment_created
+  after insert on comments
+  for each row
+  execute function notify_comment();
+
+-- For follows
+create function notify_follow() returns trigger as $$
+begin
+  select net.http_post(
+    'https://fpwokldgmdwikejniuxz.supabase.co/functions/v1/send-notification',
+    jsonb_build_object(
+      'type', 'follow',
+      'userId', NEW.following_id,
+      'referenceId', NEW.follower_id,
+      'actorName', (select username from profiles where id = NEW.follower_id)
+    )
+  );
+  return NEW;
+end;
+$$ language plpgsql;
+
+create trigger on_follow_created
+  after insert on follows
+  for each row
+  execute function notify_follow();
+
+-- For new journals
+create function notify_new_journal() returns trigger as $$
+begin
+  if NEW.is_public then
+    select net.http_post(
+      'https://fpwokldgmdwikejniuxz.supabase.co/functions/v1/send-notification',
+      jsonb_build_object(
+        'type', 'new_journal',
+        'userId', follower_id,
+        'referenceId', NEW.id,
+        'actorName', (select username from profiles where id = NEW.user_id)
+      )
+    )
+    from follows
+    where following_id = NEW.user_id;
+  end if;
+  return NEW;
+end;
+$$ language plpgsql;
+
+create trigger on_journal_created
+  after insert on journal_entries
+  for each row
+  execute function notify_new_journal();
+
+and i am having error like this
+
+I/flutter ( 8890): Error adding comment: PostgrestException(message: schema "net" does not exist, code: 3F000, details: Bad Request, hint: null)
+I/flutter ( 8890): Error adding comment: type 'Null' is not a subtype of type 'String'
+
+---
+
+_**Assistant**_
+
+
+
+
+
+Let's fix the triggers by using the correct extension. First, enable the HTTP extension:
+
+```sql
+-- First create the http extension
+create extension if not exists http with schema extensions;
+
+-- Update comment trigger
+create or replace function notify_comment() returns trigger as $$
+begin
+  perform extensions.http_post(
+    'https://fpwokldgmdwikejniuxz.supabase.co/functions/v1/send-notification',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json'
+    ),
+    body := jsonb_build_object(
+      'type', 'comment',
+      'userId', (select user_id from journal_entries where id = NEW.journal_entry_id),
+      'referenceId', NEW.journal_entry_id,
+      'actorName', (select username from profiles where id = NEW.user_id)
+    )
+  );
+  return NEW;
+end;
+$$ language plpgsql;
+
+-- Update follow trigger
+create or replace function notify_follow() returns trigger as $$
+begin
+  perform extensions.http_post(
+    'https://fpwokldgmdwikejniuxz.supabase.co/functions/v1/send-notification',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json'
+    ),
+    body := jsonb_build_object(
+      'type', 'follow',
+      'userId', NEW.following_id,
+      'referenceId', NEW.follower_id,
+      'actorName', (select username from profiles where id = NEW.follower_id)
+    )
+  );
+  return NEW;
+end;
+$$ language plpgsql;
+
+-- Update journal trigger
+create or replace function notify_new_journal() returns trigger as $$
+begin
+  if NEW.is_public then
+    perform extensions.http_post(
+      'https://fpwokldgmdwikejniuxz.supabase.co/functions/v1/send-notification',
+      headers := jsonb_build_object(
+        'Content-Type', 'application/json'
+      ),
+      body := jsonb_build_object(
+        'type', 'new_journal',
+        'userId', follower_id,
+        'referenceId', NEW.id,
+        'actorName', (select username from profiles where id = NEW.user_id)
+      )
+    )
+    from follows
+    where following_id = NEW.user_id;
+  end if;
+  return NEW;
+end;
+$$ language plpgsql;
+```
+
+Key changes:
+1. Use `extensions.http_post` instead of `net.http_post`
+2. Add proper headers parameter
+3. Use named parameters for clarity
+4. Keep existing triggers
+
+Run these SQL commands in your Supabase SQL editor to update the functions.
+
+---
+
+_**User**_
+
+
+
+---
+
+_**Assistant**_
+
+
+
+---
+
+_**User**_
+
+Notification is not triggering after commenting on any post
+
+---
+
+_**Assistant**_
+
+
+
+---
+
+_**User**_
+
+Create me current users notification screen and fetch notification from supabase and save it in local
+
+---
+
+_**Assistant**_
+
+
+
 ---
 
 

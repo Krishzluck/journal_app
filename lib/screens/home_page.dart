@@ -15,6 +15,7 @@ import 'package:journal_app/screens/search_screen.dart';
 import 'package:journal_app/screens/month_mood_screen.dart';
 import 'package:journal_app/widgets/shimmer_loading.dart';
 import 'package:journal_app/providers/follow_provider.dart';
+import 'package:journal_app/services/notification_service.dart';
 
 class HomePage extends StatefulWidget {
   @override
@@ -27,11 +28,17 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    _initializeNotifications();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final blockedUsersProvider = Provider.of<BlockedUsersProvider>(context, listen: false);
       Provider.of<JournalProvider>(context, listen: false)
           .loadGlobalEntries(blockedUsersProvider.blockedUsers);
     });
+  }
+
+  Future<void> _initializeNotifications() async {
+    final notificationService = NotificationService();
+    await notificationService.initialize();
   }
 
   @override

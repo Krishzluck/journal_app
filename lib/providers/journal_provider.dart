@@ -403,5 +403,20 @@ class JournalProvider extends ChangeNotifier {
     _followerEntries = [];
     notifyListeners();
   }
+
+  Future<JournalEntry?> getJournalEntry(String entryId) async {
+    try {
+      final response = await Supabase.instance.client
+          .from('journal_entries')
+          .select()
+          .eq('id', entryId)
+          .single();
+      
+      return JournalEntry.fromJson(response);
+    } catch (e) {
+      print('Error getting journal entry: $e');
+      return null;
+    }
+  }
 }
 
