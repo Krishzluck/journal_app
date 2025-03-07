@@ -6,6 +6,8 @@ import 'package:journal_app/screens/calendar_screen.dart';
 import 'package:journal_app/screens/auth_page.dart';
 import 'package:journal_app/screens/saved_journals_screen.dart';
 import 'package:journal_app/screens/blocked_users_screen.dart';
+import 'package:journal_app/screens/notifications_screen.dart';
+import 'package:journal_app/providers/notification_provider.dart';
 
 class SettingsPage extends StatelessWidget {
   @override
@@ -45,6 +47,33 @@ class SettingsPage extends StatelessWidget {
               style: TextStyle(color: Colors.grey[600]),
             ),
             onTap: () => _showThemeModeBottomSheet(context),
+          ),
+          Consumer<NotificationProvider>(
+            builder: (context, notificationProvider, _) {
+              return ListTile(
+                leading: Icon(Icons.notifications),
+                title: Text('Notifications'),
+                trailing: notificationProvider.unreadCount > 0
+                  ? Container(
+                      padding: EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Text(
+                        notificationProvider.unreadCount.toString(),
+                        style: TextStyle(color: Colors.white, fontSize: 12),
+                      ),
+                    )
+                  : null,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => NotificationsScreen()),
+                  );
+                },
+              );
+            },
           ),
           ListTile(
             leading: Icon(Icons.block),

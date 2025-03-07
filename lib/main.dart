@@ -4,6 +4,7 @@ import 'package:journal_app/providers/auth_provider.dart';
 import 'package:journal_app/providers/blocked_users_provider.dart';
 import 'package:journal_app/providers/follow_provider.dart';
 import 'package:journal_app/providers/journal_provider.dart';
+import 'package:journal_app/providers/notification_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -33,6 +34,7 @@ void main() async {
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => BlockedUsersProvider()),
         ChangeNotifierProvider(create: (_) => FollowProvider()),
+        ChangeNotifierProvider(create: (_) => NotificationProvider()),
       ],
       child: const MyApp(),
     ),

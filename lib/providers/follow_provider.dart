@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:journal_app/main.dart';
 import 'package:journal_app/providers/auth_provider.dart';
 import 'package:journal_app/providers/journal_provider.dart';
+import 'package:journal_app/services/notification_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:provider/provider.dart';
 
@@ -58,6 +59,23 @@ class FollowProvider with ChangeNotifier {
         listen: false
       );
       await journalProvider.loadFollowingEntries(currentUserId, _followingIds);
+      
+      // Create a notification for the target user
+      // Get current user's profile to get the username
+      final userProfileResponse = await _supabase
+          .from('profiles')
+          .select('username')
+          .eq('id', currentUserId)
+          .single();
+          
+      final username = userProfileResponse['username'] as String;
+      
+      // Create follow notification
+      final notificationService = NotificationService();
+      await notificationService.createFollowNotification(
+        targetUserId: targetUserId,
+        followerName: username,
+      );
       
       notifyListeners();
     } catch (e) {

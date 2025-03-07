@@ -124,9 +124,9 @@ class _MonthMoodScreenState extends State<MonthMoodScreen> {
         ? LayoutBuilder(
             builder: (context, constraints) {
               return SingleChildScrollView(
-                physics: AlwaysScrollableScrollPhysics(),
+                physics: NeverScrollableScrollPhysics(),
                 child: Container(
-                  height: constraints.maxHeight,
+                  height: MediaQuery.sizeOf(context).height * .5,
                   child: emptyState,
                 ),
               );

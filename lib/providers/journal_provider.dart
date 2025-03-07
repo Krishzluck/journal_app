@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:journal_app/providers/blocked_users_provider.dart';
+import 'package:journal_app/services/notification_service.dart';
 
 final Map<String, Color> moodColors = {
   'Happy': Colors.green,
@@ -174,6 +175,24 @@ class JournalProvider extends ChangeNotifier {
         _userEntries.insert(0, newEntry);
         if (isPublic) {
           _globalEntries.insert(0, newEntry);
+          
+          // If the post is public, create notifications for followers
+          // Get current user's profile to get the username
+          final userProfileResponse = await Supabase.instance.client
+              .from('profiles')
+              .select('username')
+              .eq('id', user.id)
+              .single();
+              
+          final username = userProfileResponse['username'] as String;
+          
+          // Create notifications for followers
+          final notificationService = NotificationService();
+          await notificationService.createNewPostNotifications(
+            postId: newEntry.id,
+            postTitle: newEntry.title,
+            authorName: username,
+          );
         }
         notifyListeners();
       }
@@ -287,7 +306,31 @@ class JournalProvider extends ChangeNotifier {
         'user_id': user.id,
       }).select();
 
-      return Comment.fromJson(response[0]);
+      final comment = Comment.fromJson(response[0]);
+      
+      // Get the journal entry to find the owner and create a notification
+      final entry = await getJournalEntry(entryId);
+      if (entry != null) {
+        // Get current user's profile to get the username
+        final userProfileResponse = await Supabase.instance.client
+            .from('profiles')
+            .select('username')
+            .eq('id', user.id)
+            .single();
+            
+        final username = userProfileResponse['username'] as String;
+        
+        // Create notification for the post owner
+        final notificationService = NotificationService();
+        await notificationService.createCommentNotification(
+          postOwnerId: entry.userId,
+          commenterName: username,
+          postTitle: entry.title,
+          postId: entry.id,
+        );
+      }
+
+      return comment;
     } catch (e) {
       print('Error adding comment: $e');
       return Comment.fromJson({});

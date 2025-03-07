@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:developer';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -73,6 +74,7 @@ class NotificationService {
     await _flutterLocalNotificationsPlugin.initialize(
       initializationSettings,
       onDidReceiveNotificationResponse: (details) {
+        print('Received notification response with payload: ${details.payload}');
         _handleNotificationTap(null, payload: details.payload);
       },
     );
@@ -99,7 +101,47 @@ class NotificationService {
 
   void _handleNotificationTap(RemoteMessage? message, {String? payload}) {
     // Handle navigation based on notification type
-    final data = message?.data ?? {};
+    Map<String, dynamic> data = {};
+    
+    if (payload != null && payload.isNotEmpty) {
+      print('Raw payload: $payload');
+      
+      // For the specific format: {reference_id: 75e244c9-44fa-4a90-9a8d-198bdf936c85, type: comment}
+      if (payload.contains('reference_id:') && payload.contains('type:')) {
+        // Extract reference_id
+        final referenceIdRegex = RegExp(r'reference_id:\s*([\w-]+)');
+        final referenceIdMatch = referenceIdRegex.firstMatch(payload);
+        if (referenceIdMatch != null && referenceIdMatch.groupCount >= 1) {
+          final referenceId = referenceIdMatch.group(1);
+          if (referenceId != null) {
+            data['reference_id'] = referenceId;
+          }
+        }
+        
+        // Extract type
+        final typeRegex = RegExp(r'type:\s*(\w+)');
+        final typeMatch = typeRegex.firstMatch(payload);
+        if (typeMatch != null && typeMatch.groupCount >= 1) {
+          final type = typeMatch.group(1);
+          if (type != null) {
+            data['type'] = type;
+          }
+        }
+        
+        print('Extracted data from payload: $data');
+      } else {
+        // Try to decode as JSON as a fallback
+        try {
+          data = Map<String, dynamic>.from(jsonDecode(payload));
+          print('Decoded JSON notification payload: $data');
+        } catch (e) {
+          print('Failed to parse payload as JSON: $e');
+        }
+      }
+    } else if (message != null) {
+      data = message.data;
+    }
+    
     final type = data['type'];
     final referenceId = data['reference_id'];
 
@@ -173,6 +215,99 @@ class NotificationService {
       MaterialPageRoute(
         builder: (context) => MonthMoodScreen(),
       ),
+    );
+  }
+  
+  // Method to create a notification in the database
+  Future<void> createNotification({
+    required String userId,
+    required String title,
+    required String body,
+    required String type,
+    String? referenceId,
+  }) async {
+    try {
+      await _supabase.from('notifications').insert({
+        'user_id': userId,
+        'title': title,
+        'body': body,
+        'type': type,
+        'reference_id': referenceId,
+      });
+    } catch (e) {
+      print('Error creating notification: $e');
+    }
+  }
+  
+  // Create a comment notification
+  Future<void> createCommentNotification({
+    required String postOwnerId,
+    required String commenterName,
+    required String postTitle,
+    required String postId,
+  }) async {
+    // Don't create notification if commenter is the post owner
+    final currentUserId = _supabase.auth.currentUser?.id;
+    if (currentUserId == postOwnerId) return;
+    
+    await createNotification(
+      userId: postOwnerId,
+      title: 'New Comment',
+      body: '$commenterName commented on your post "$postTitle"',
+      type: 'comment',
+      referenceId: postId,
+    );
+  }
+  
+  // Create a new post notification for all followers
+  Future<void> createNewPostNotifications({
+    required String postId,
+    required String postTitle,
+    required String authorName,
+  }) async {
+    final currentUserId = _supabase.auth.currentUser?.id;
+    if (currentUserId == null) return;
+    
+    try {
+      // Get all followers of the current user
+      final followersData = await _supabase
+          .from('follows')
+          .select('follower_id')
+          .eq('following_id', currentUserId);
+      
+      final followerIds = followersData
+          .map<String>((item) => item['follower_id'] as String)
+          .toList();
+      
+      // Create a notification for each follower
+      for (final followerId in followerIds) {
+        await createNotification(
+          userId: followerId,
+          title: 'New Post',
+          body: '$authorName shared a new post: "$postTitle"',
+          type: 'new_journal',
+          referenceId: postId,
+        );
+      }
+    } catch (e) {
+      print('Error creating new post notifications: $e');
+    }
+  }
+  
+  // Create a follow notification
+  Future<void> createFollowNotification({
+    required String targetUserId,
+    required String followerName,
+  }) async {
+    final currentUserId = _supabase.auth.currentUser?.id;
+    if (currentUserId == null) return;
+    
+    await createNotification(
+      userId: targetUserId,
+      title: 'New Follower',
+      body: '$followerName started following you',
+      type: 'follow',
+      referenceId: currentUserId,
     );
   }
 } 
